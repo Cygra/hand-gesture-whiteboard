@@ -67,29 +67,31 @@ export default function Home() {
 
       lastWebcamTime = video.currentTime;
       const startTimeMs = performance.now();
-      const result = gestureRecognizer.recognizeForVideo(video, startTimeMs);
+      const { gestures, landmarks } = gestureRecognizer.recognizeForVideo(
+        video,
+        startTimeMs
+      );
 
-      if (result.landmarks) {
+      let landmark = landmarks?.[0];
+
+      if (landmark) {
         const width = landmarkCanvas.width;
         const height = landmarkCanvas.height;
-        result.landmarks.forEach((landmarks) => {
-          const thumbTip = landmarks[THUMB_TIP_INDEX];
-          const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
+        const indexFingerTip = landmark[INDEX_FINGER_TIP_INDEX];
 
-          const dx = (thumbTip.x - indexFingerTip.x) * width;
-          const dy = (thumbTip.y - indexFingerTip.y) * height;
-
-          const connected = dx < 50 && dy < 50;
-          if (connected) {
+        if (gestures?.length > 0) {
+          const { categoryName, score } = gestures[0][0];
+          const categoryScore = Number(score);
+          if (categoryName === "Pointing_Up" && categoryScore > 0.8) {
             const x = (1 - indexFingerTip.x) * width;
             const y = indexFingerTip.y * height;
             drawLine(strokeCanvasCtx, x, y);
           } else {
             prevX = prevY = 0;
           }
+        }
 
-          drawLandmarks(landmarks, landmarkCanvasCtx, width, height);
-        });
+        drawLandmarks(landmark, landmarkCanvasCtx, width, height);
       }
 
       requestAnimationFrame(() => {
