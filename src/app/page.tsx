@@ -172,6 +172,11 @@ export default function Home() {
       >
         Github
       </a>
+      <div className={"fixed top-2 underline text-black text-center"}>
+        {"Connect your index finger tip and thumb tip (like 👌) to draw."}
+        <br />
+        {"连接食指和拇指的指尖（就像 👌），开始画图。"}
+      </div>
       <canvas
         ref={landmarkCanvasRef}
         className={"fixed inset-0 z-50"}
