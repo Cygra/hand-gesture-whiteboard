@@ -1,4 +1,4 @@
-# Danmaku Mask
+# Hand Gesture Whiteboard
 
 ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
 
@@ -7,6 +7,8 @@
 使用机器学习识别手势，在屏幕上绘制相应的路径。
 
 Implementing machine learning to detect hand gesture and draw lines like a whiteboard.
+
+![example](docs/example.gif)
 
 ## Getting Started
 
