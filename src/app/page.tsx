@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   FilesetResolver,
   GestureRecognizer,
+  DrawingUtils,
   NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 
@@ -87,8 +88,7 @@ export default function Home() {
           } else {
             prevX = prevY = 0;
           }
-
-          drawLandmarks(landmarks, landmarkCanvasCtx, width, height);
+          drawLandmarks(landmarks, landmarkCanvasCtx, width, height, connected);
         });
       }
 
@@ -104,23 +104,18 @@ export default function Home() {
     landmarks: NormalizedLandmark[],
     ctx: CanvasRenderingContext2D,
     width: number,
-    height: number
+    height: number,
+    connected: boolean
   ) => {
+    const drawingUtils = new DrawingUtils(ctx);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "white";
-
-    landmarks.forEach((landmark, ind) => {
-      const x = (1 - landmark.x) * width;
-      const y = landmark.y * height;
-
-      ctx.fillStyle = "#3370d4";
-      if (ind === THUMB_TIP_INDEX || ind === INDEX_FINGER_TIP_INDEX) {
-        ctx.fillStyle = "#c82124";
-      }
-      ctx.beginPath();
-      ctx.arc(x, y, 5, 0, 2 * Math.PI);
-      ctx.closePath();
-      ctx.fill();
+    drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, {
+      color: "#00FF00",
+      lineWidth: connected ? 5 : 2,
+    });
+    drawingUtils.drawLandmarks(landmarks, {
+      color: "#FF0000",
+      lineWidth: 1,
     });
   };
 
@@ -182,6 +177,9 @@ export default function Home() {
         className={"fixed inset-0 z-50"}
         width={canvasSize[0] || 640}
         height={canvasSize[1] || 480}
+        style={{
+          transform: "rotateY(180deg)",
+        }}
       />
       <canvas
         ref={strokeCanvasRef}

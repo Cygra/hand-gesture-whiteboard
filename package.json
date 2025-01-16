@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.20",
+    "@mediapipe/tasks-vision": "0.10.18",
     "@next/third-parties": "^15.1.4",
     "next": "15.1.4",
     "react": "^19.0.0",
