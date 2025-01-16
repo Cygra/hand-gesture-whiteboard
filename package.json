@@ -11,6 +11,12 @@
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.18",
     "@next/third-parties": "^15.1.4",
+    "@nextui-org/button": "^2.2.9",
+    "@nextui-org/link": "^2.2.7",
+    "@nextui-org/modal": "^2.2.7",
+    "@nextui-org/system": "^2.4.6",
+    "@nextui-org/theme": "^2.4.5",
+    "framer-motion": "^11.18.0",
     "next": "15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

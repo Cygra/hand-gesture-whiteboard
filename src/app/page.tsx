@@ -8,6 +8,15 @@ import {
   DrawingUtils,
   NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
+import {
+  useDisclosure,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+} from "@nextui-org/modal";
+import { Button } from "@nextui-org/button";
+import { Link } from "@nextui-org/link";
 
 const THUMB_TIP_INDEX = 4;
 const INDEX_FINGER_TIP_INDEX = 8;
@@ -73,25 +82,34 @@ export default function Home() {
       if (result.landmarks) {
         const width = landmarkCanvas.width;
         const height = landmarkCanvas.height;
-        result.landmarks.forEach((landmarks) => {
-          const thumbTip = landmarks[THUMB_TIP_INDEX];
-          const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
+        if (result.landmarks.length === 0) {
+          landmarkCanvasCtx.clearRect(0, 0, width, height);
+        } else {
+          result.landmarks.forEach((landmarks) => {
+            const thumbTip = landmarks[THUMB_TIP_INDEX];
+            const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
 
-          const dx = (thumbTip.x - indexFingerTip.x) * width;
-          const dy = (thumbTip.y - indexFingerTip.y) * height;
+            const dx = (thumbTip.x - indexFingerTip.x) * width;
+            const dy = (thumbTip.y - indexFingerTip.y) * height;
 
-          const connected = dx < 50 && dy < 50;
-          if (connected) {
-            const x = (1 - indexFingerTip.x) * width;
-            const y = indexFingerTip.y * height;
-            drawLine(strokeCanvasCtx, x, y);
-          } else {
-            prevX = prevY = 0;
-          }
-          drawLandmarks(landmarks, landmarkCanvasCtx, width, height, connected);
-        });
+            const connected = dx < 50 && dy < 50;
+            if (connected) {
+              const x = (1 - indexFingerTip.x) * width;
+              const y = indexFingerTip.y * height;
+              drawLine(strokeCanvasCtx, x, y);
+            } else {
+              prevX = prevY = 0;
+            }
+            drawLandmarks(
+              landmarks,
+              landmarkCanvasCtx,
+              width,
+              height,
+              connected
+            );
+          });
+        }
       }
-
       requestAnimationFrame(() => {
         renderLoop();
       });
@@ -130,6 +148,7 @@ export default function Home() {
     ctx.lineWidth = 5;
     ctx.moveTo(prevX, prevY);
     ctx.lineTo(smoothedX, smoothedY);
+    ctx.strokeStyle = "white";
     ctx.stroke();
     ctx.save();
 
@@ -158,23 +177,25 @@ export default function Home() {
   const landmarkCanvasRef = useRef<HTMLCanvasElement>(null);
   const strokeCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  const { isOpen, onOpen, onOpenChange } = useDisclosure();
+
   return (
-    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-white">
-      <a
-        href={"https://github.com/Cygra/hand-gesture-whiteboard"}
-        className={"fixed top-2 right-2 underline text-black"}
-        target={"_blank"}
-      >
-        Github
-      </a>
-      <div className={"fixed top-2 underline text-black text-center"}>
+    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-gradient-to-tr from-black to-[#10182f]">
+      <iframe
+        src="https://ghbtns.com/github-btn.html?user=Cygra&repo=hand-gesture-whiteboard&type=star&count=true&size=large"
+        width="170"
+        height="30"
+        title="GitHub"
+        className={"fixed top-2 left-2 z-50"}
+      />
+      <div className={"fixed top-2 underline text-white text-center"}>
         {"Connect your index finger tip and thumb tip (like 👌) to draw."}
         <br />
         {"连接食指和拇指的指尖（就像 👌），开始画图。"}
       </div>
       <canvas
         ref={landmarkCanvasRef}
-        className={"fixed inset-0 z-50"}
+        className={"fixed inset-0 z-10"}
         width={canvasSize[0] || 640}
         height={canvasSize[1] || 480}
         style={{
@@ -183,7 +204,7 @@ export default function Home() {
       />
       <canvas
         ref={strokeCanvasRef}
-        className={"fixed inset-0 z-50"}
+        className={"fixed inset-0 z-10"}
         width={canvasSize[0] || 640}
         height={canvasSize[1] || 480}
       />
@@ -197,6 +218,41 @@ export default function Home() {
           transform: "rotateY(180deg)",
         }}
       />
+      <Button
+        onPress={onOpen}
+        className={"fixed top-2 right-2 z-50"}
+        color="primary"
+        variant="shadow"
+      >
+        About
+      </Button>
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+        <ModalContent className={"bg-[#10082c]"}>
+          <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
+          <ModalBody>
+            <p>
+              基于 Next.js 和 Mediapipe tasks-vision Gesture Recognizer
+              实现的手势白板。
+              <br />
+              通过摄像头实时画面识别手势，在屏幕上绘制相应的路径。
+            </p>
+            <p>
+              A gesture whiteboard based on Next.js and Mediapipe tasks-vision
+              Gesture Recognizer.
+              <br />
+              Recognize gestures through real-time camera images and draw
+              corresponding paths on the screen.
+            </p>
+            <p>其他 Mediapipe + Next.js 项目：</p>
+            <p>Other Mediapipe + Next.js projects:</p>
+            <p>
+              <Link href="https://cygra.github.io/danmaku-mask/">
+                Danmaku Mask
+              </Link>
+            </p>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </div>
   );
 }
