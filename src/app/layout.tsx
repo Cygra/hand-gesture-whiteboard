@@ -20,6 +20,7 @@ export const metadata: Metadata = {
     "使用机器学习识别手势，在屏幕上绘制相应的路径。" +
     "This site is developed with Next.js and Mediapipe tasks-vision Gesture Recognizer." +
     " Implementing machine learning to detect hand gesture and draw lines like a whiteboard.",
+  verification: { google: "JeBzIDptjs75OZQ6Swe-7AQ-O9hr1ed2kkki_N1JyfY" },
   openGraph: {
     type: "website",
     url: "https://cygra.github.io/hand-gesture-whiteboard/",
