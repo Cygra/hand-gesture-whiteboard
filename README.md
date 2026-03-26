@@ -2,9 +2,9 @@
 
 ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
 
-A whiteboard built with Next.js and [Mediapipe](https://ai.google.dev/edge/mediapipe/solutions/guide) Gesture Recognizer。
+A 3D gesture whiteboard built with Next.js, [Mediapipe](https://ai.google.dev/edge/mediapipe/solutions/guide) Gesture Recognizer and Three.js.
 
-Implementing machine learning to detect hand gesture and draw lines like a whiteboard.
+Use hand gestures to draw long colorful balloon strokes inside a 3D fish-tank-like space. Releasing your fingers lets the balloons naturally fall and stack at the bottom.
 
 ![example](docs/example.gif)
 

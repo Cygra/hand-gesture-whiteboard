@@ -19,7 +19,8 @@
     "framer-motion": "^11.18.0",
     "next": "15.1.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
