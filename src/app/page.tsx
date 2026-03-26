@@ -42,13 +42,14 @@ const MIN_POINT_DISTANCE = 3;
 const DRAWING_ANIMATION_PERIOD = 70;
 const DRAWING_ANIMATION_AMPLITUDE = 0.04;
 const MIN_TOPPLE_OFFSET = 2;
-const MIN_BOUNCE_VELOCITY = 22;
 const MIN_BOUNCE_FACTOR = 0.2;
 const MIN_ANGULAR_VELOCITY = 0.01;
 const TOPPLE_STOP_THRESHOLD = 0.03;
 const SETTLEMENT_VELOCITY_Y = 12;
 const SETTLEMENT_LATERAL_SPEED = 8;
 const SETTLEMENT_BOUNCE_THRESHOLD = 0.25;
+const BOUNCE_STOP_SPEED = 8;
+const MULTI_CONTACT_THRESHOLD = 5;
 const FALL_STRETCH_DIVISOR = 2000;
 const MAX_FALL_STRETCH = 0.08;
 const WALL_PADDING_XY = 10;
@@ -162,6 +163,30 @@ export default function Home() {
     }
 
     return new THREE.Vector3(pivot.x / count, floorY, pivot.z / count);
+  };
+
+  const alignMultiContactPoints = (points: THREE.Vector3[], floorY: number) => {
+    let minY = Number.POSITIVE_INFINITY;
+    points.forEach((point) => {
+      if (point.y < minY) minY = point.y;
+    });
+
+    points.forEach((point) => {
+      if (point.y <= minY + MULTI_CONTACT_THRESHOLD) {
+        point.y = floorY;
+      }
+    });
+
+    let correctedMinY = Number.POSITIVE_INFINITY;
+    points.forEach((point) => {
+      if (point.y < correctedMinY) correctedMinY = point.y;
+    });
+    if (correctedMinY < floorY) {
+      const correction = floorY - correctedMinY;
+      points.forEach((point) => {
+        point.y += correction;
+      });
+    }
   };
 
   const rebuildBalloonGeometry = (stroke: BalloonStroke, elastic = 1) => {
@@ -471,16 +496,17 @@ export default function Home() {
           }
         }
 
-        if (
-          Math.abs(stroke.velocityY) > MIN_BOUNCE_VELOCITY &&
-          stroke.bounce > MIN_BOUNCE_FACTOR
-        ) {
-          stroke.velocityY = -stroke.velocityY * GROUND_RESTITUTION * stroke.bounce;
+        const incomingSpeed = Math.max(0, -stroke.velocityY);
+        if (incomingSpeed > 0) {
+          const bouncedSpeed = incomingSpeed * GROUND_RESTITUTION * stroke.bounce;
           stroke.bounce *= QUICK_BOUNCE_DAMPING;
-          rebuildBalloonGeometry(stroke, 0.93);
-        } else {
-          stroke.velocityY = 0;
-          stroke.bounce *= FALL_DAMPING;
+          if (bouncedSpeed > BOUNCE_STOP_SPEED && stroke.bounce > MIN_BOUNCE_FACTOR) {
+            stroke.velocityY = bouncedSpeed;
+            rebuildBalloonGeometry(stroke, 0.93);
+          } else {
+            stroke.velocityY = 0;
+            stroke.bounce *= FALL_DAMPING;
+          }
         }
 
         if (stroke.toppling && stroke.angularVelocity > MIN_ANGULAR_VELOCITY) {
@@ -509,6 +535,7 @@ export default function Home() {
           stroke.velocityY = 0;
           stroke.velocityX = 0;
           stroke.velocityZ = 0;
+          alignMultiContactPoints(stroke.points, targetBottom);
           stroke.settled = true;
         }
         rebuildBalloonGeometry(stroke, 1);
