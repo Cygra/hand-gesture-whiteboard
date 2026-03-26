@@ -26,6 +26,35 @@ const MIN_POINTS_FOR_BALLOON = 6;
 const GRAVITY = 900;
 const FALL_DAMPING = 0.9;
 const MAX_FRAME_TIME_SECONDS = 0.033;
+const AIR_DRAG = 3.6;
+const MAX_FALL_SPEED = 180;
+const SWAY_FREQUENCY = 1.3;
+const SWAY_STRENGTH = 24;
+const LATERAL_DAMPING = 3.2;
+const GROUND_RESTITUTION = 0.28;
+const QUICK_BOUNCE_DAMPING = 0.45;
+const COLLISION_PUSH_FORCE = 26;
+const TOPPLE_TORQUE_SCALE = 0.006;
+const TOPPLE_DAMPING = 2.8;
+const MAX_TOPPLE_ANGULAR_SPEED = 1.4;
+const CONTACT_THRESHOLD_Y = 8;
+const MIN_POINT_DISTANCE = 3;
+const DRAWING_ANIMATION_PERIOD = 70;
+const DRAWING_ANIMATION_AMPLITUDE = 0.04;
+const MIN_TOPPLE_OFFSET = 2;
+const MIN_BOUNCE_VELOCITY = 22;
+const MIN_BOUNCE_FACTOR = 0.2;
+const MIN_ANGULAR_VELOCITY = 0.01;
+const TOPPLE_STOP_THRESHOLD = 0.03;
+const SETTLEMENT_VELOCITY_Y = 12;
+const SETTLEMENT_LATERAL_SPEED = 8;
+const SETTLEMENT_BOUNCE_THRESHOLD = 0.25;
+const FALL_STRETCH_DIVISOR = 2000;
+const MAX_FALL_STRETCH = 0.08;
+const WALL_PADDING_XY = 10;
+const WALL_PADDING_Z = 25;
+const WAVE_PERIOD = 220;
+const WAVE_DEPTH_RATIO = 0.22;
 
 let prevX = 0;
 let prevY = 0;
@@ -41,6 +70,15 @@ type BalloonStroke = {
   baseRadius: number;
   minY: number;
   maxY: number;
+  velocityX: number;
+  velocityZ: number;
+  swayPhase: number;
+  swayStrength: number;
+  angularVelocity: number;
+  tiltAxis: THREE.Vector3;
+  contactPivot: THREE.Vector3;
+  landed: boolean;
+  toppling: boolean;
 };
 
 export default function Home() {
@@ -93,6 +131,35 @@ export default function Home() {
     return { minY, maxY };
   };
 
+  const computeCenter = (points: THREE.Vector3[]) => {
+    const center = new THREE.Vector3();
+    points.forEach((point) => center.add(point));
+    return center.multiplyScalar(1 / points.length);
+  };
+
+  const computeContactPivot = (points: THREE.Vector3[], floorY: number) => {
+    let minY = Number.POSITIVE_INFINITY;
+    points.forEach((point) => {
+      if (point.y < minY) minY = point.y;
+    });
+
+    const pivot = new THREE.Vector3();
+    let count = 0;
+    points.forEach((point) => {
+      if (point.y <= minY + CONTACT_THRESHOLD_Y) {
+        pivot.x += point.x;
+        pivot.z += point.z;
+        count += 1;
+      }
+    });
+    if (count === 0) {
+      const center = points[Math.floor(points.length / 2)];
+      return new THREE.Vector3(center.x, floorY, center.z);
+    }
+
+    return new THREE.Vector3(pivot.x / count, floorY, pivot.z / count);
+  };
+
   const rebuildBalloonGeometry = (stroke: BalloonStroke, elastic = 1) => {
     if (stroke.points.length < 2) return;
 
@@ -120,9 +187,18 @@ export default function Home() {
     const three = threeRef.current;
     if (!three) return;
 
-    point.x = Math.min(three.rightWall - 10, Math.max(three.leftWall + 10, point.x));
-    point.y = Math.min(three.topWall - 10, Math.max(three.bottomWall + 10, point.y));
-    point.z = Math.min(three.frontWall - 25, Math.max(three.backWall + 25, point.z));
+    point.x = Math.min(
+      three.rightWall - WALL_PADDING_XY,
+      Math.max(three.leftWall + WALL_PADDING_XY, point.x)
+    );
+    point.y = Math.min(
+      three.topWall - WALL_PADDING_XY,
+      Math.max(three.bottomWall + WALL_PADDING_XY, point.y)
+    );
+    point.z = Math.min(
+      three.frontWall - WALL_PADDING_Z,
+      Math.max(three.backWall + WALL_PADDING_Z, point.z)
+    );
   };
 
   const addPointToActiveStroke = (x: number, y: number) => {
@@ -133,7 +209,9 @@ export default function Home() {
     const depth = state.tankDepth;
     const worldX = x - canvasSizeRef.current.width / 2;
     const worldY = canvasSizeRef.current.height / 2 - y;
-    const wave = Math.sin(performance.now() / 220 + state.idSeed) * (depth * 0.22);
+    const wave =
+      Math.sin(performance.now() / WAVE_PERIOD + state.idSeed) *
+      (depth * WAVE_DEPTH_RATIO);
     const worldZ = wave;
 
     const point = new THREE.Vector3(worldX, worldY, worldZ);
@@ -169,6 +247,15 @@ export default function Home() {
         baseRadius: 11 + Math.random() * 4,
         minY: point.y,
         maxY: point.y,
+        velocityX: (Math.random() - 0.5) * 8,
+        velocityZ: (Math.random() - 0.5) * 8,
+        swayPhase: Math.random() * Math.PI * 2,
+        swayStrength: SWAY_STRENGTH * (0.7 + Math.random() * 0.6),
+        angularVelocity: 0,
+        tiltAxis: new THREE.Vector3(1, 0, 0),
+        contactPivot: new THREE.Vector3(point.x, point.y, point.z),
+        landed: false,
+        toppling: false,
       };
 
       state.activeStroke = stroke;
@@ -184,12 +271,15 @@ export default function Home() {
       last.z + SMOOTHING_FACTOR * (point.z - last.z)
     );
 
-    if (smoothedPoint.distanceTo(last) < 3) {
+    if (smoothedPoint.distanceTo(last) < MIN_POINT_DISTANCE) {
       return;
     }
 
     stroke.points.push(smoothedPoint);
-    rebuildBalloonGeometry(stroke, 1 + Math.sin(performance.now() / 70) * 0.04);
+    rebuildBalloonGeometry(
+      stroke,
+      1 + Math.sin(performance.now() / DRAWING_ANIMATION_PERIOD) * DRAWING_ANIMATION_AMPLITUDE
+    );
   };
 
   const releaseActiveStroke = () => {
@@ -205,6 +295,9 @@ export default function Home() {
     } else {
       stroke.velocityY = -40;
       stroke.bounce = 1;
+      stroke.landed = false;
+      stroke.toppling = false;
+      stroke.angularVelocity = 0;
       rebuildBalloonGeometry(stroke, 1.05);
     }
 
@@ -245,10 +338,29 @@ export default function Home() {
       }
 
       stroke.velocityY -= GRAVITY * deltaSeconds;
+      stroke.velocityY -= stroke.velocityY * AIR_DRAG * deltaSeconds;
+      if (stroke.velocityY < -MAX_FALL_SPEED) {
+        stroke.velocityY = -MAX_FALL_SPEED;
+      }
+
+      const swayTime = performance.now() * 0.001 * SWAY_FREQUENCY + stroke.swayPhase;
+      stroke.velocityX +=
+        Math.sin(swayTime) * stroke.swayStrength * deltaSeconds;
+      stroke.velocityZ +=
+        Math.cos(swayTime * 0.9 + stroke.swayPhase) * stroke.swayStrength * 0.65 * deltaSeconds;
+
+      stroke.velocityX -= stroke.velocityX * LATERAL_DAMPING * deltaSeconds;
+      stroke.velocityZ -= stroke.velocityZ * LATERAL_DAMPING * deltaSeconds;
+
       const offsetY = stroke.velocityY * deltaSeconds;
+      const offsetX = stroke.velocityX * deltaSeconds;
+      const offsetZ = stroke.velocityZ * deltaSeconds;
 
       stroke.points.forEach((point) => {
+        point.x += offsetX;
         point.y += offsetY;
+        point.z += offsetZ;
+        clampInsideTank(point);
       });
 
       let targetBottom = three.bottomWall + stroke.baseRadius;
@@ -264,6 +376,14 @@ export default function Home() {
         const allowed = stroke.baseRadius * 1.8 + other.baseRadius * 1.8;
         if (distanceXZ < allowed) {
           targetBottom = Math.max(targetBottom, other.maxY + stroke.baseRadius * 1.05);
+          if (distanceXZ > 0.001) {
+            const push = ((allowed - distanceXZ) / allowed) * COLLISION_PUSH_FORCE;
+            stroke.velocityX += (dx / distanceXZ) * push * deltaSeconds;
+            stroke.velocityZ += (dz / distanceXZ) * push * deltaSeconds;
+          } else {
+            stroke.velocityX += (Math.random() - 0.5) * 6;
+            stroke.velocityZ += (Math.random() - 0.5) * 6;
+          }
         }
       });
 
@@ -279,17 +399,73 @@ export default function Home() {
           point.y += correction;
         });
 
-        if (Math.abs(stroke.velocityY) > 80 && stroke.bounce > 0.2) {
-          stroke.velocityY = -stroke.velocityY * 0.35 * stroke.bounce;
-          stroke.bounce *= FALL_DAMPING;
-          rebuildBalloonGeometry(stroke, 0.9);
+        if (!stroke.landed) {
+          stroke.landed = true;
+          stroke.contactPivot = computeContactPivot(stroke.points, targetBottom);
+          const center = computeCenter(stroke.points);
+          const offset = new THREE.Vector3(
+            center.x - stroke.contactPivot.x,
+            0,
+            center.z - stroke.contactPivot.z
+          );
+          const offsetLength = offset.length();
+          if (offsetLength > MIN_TOPPLE_OFFSET) {
+            offset.normalize();
+            stroke.tiltAxis.set(offset.z, 0, -offset.x).normalize();
+            stroke.angularVelocity = Math.min(
+              MAX_TOPPLE_ANGULAR_SPEED,
+              offsetLength * TOPPLE_TORQUE_SCALE
+            );
+            stroke.toppling = true;
+          }
+        }
+
+        if (
+          Math.abs(stroke.velocityY) > MIN_BOUNCE_VELOCITY &&
+          stroke.bounce > MIN_BOUNCE_FACTOR
+        ) {
+          stroke.velocityY = -stroke.velocityY * GROUND_RESTITUTION * stroke.bounce;
+          stroke.bounce *= QUICK_BOUNCE_DAMPING;
+          rebuildBalloonGeometry(stroke, 0.93);
         } else {
           stroke.velocityY = 0;
-          stroke.settled = true;
-          rebuildBalloonGeometry(stroke, 1);
+          stroke.bounce *= FALL_DAMPING;
         }
+
+        if (stroke.toppling && stroke.angularVelocity > MIN_ANGULAR_VELOCITY) {
+          const angle = stroke.angularVelocity * deltaSeconds;
+          stroke.points.forEach((point) => {
+            point.sub(stroke.contactPivot);
+            point.applyAxisAngle(stroke.tiltAxis, angle);
+            point.add(stroke.contactPivot);
+          });
+          stroke.angularVelocity -= stroke.angularVelocity * TOPPLE_DAMPING * deltaSeconds;
+          if (stroke.angularVelocity < TOPPLE_STOP_THRESHOLD) {
+            stroke.angularVelocity = 0;
+            stroke.toppling = false;
+          }
+        }
+
+        const lateralSpeed = Math.sqrt(
+          stroke.velocityX * stroke.velocityX + stroke.velocityZ * stroke.velocityZ
+        );
+        if (
+          Math.abs(stroke.velocityY) < SETTLEMENT_VELOCITY_Y &&
+          lateralSpeed < SETTLEMENT_LATERAL_SPEED &&
+          !stroke.toppling &&
+          stroke.bounce < SETTLEMENT_BOUNCE_THRESHOLD
+        ) {
+          stroke.velocityY = 0;
+          stroke.velocityX = 0;
+          stroke.velocityZ = 0;
+          stroke.settled = true;
+        }
+        rebuildBalloonGeometry(stroke, 1);
       } else {
-        rebuildBalloonGeometry(stroke, 1 + Math.min(Math.abs(stroke.velocityY) / 2000, 0.08));
+        rebuildBalloonGeometry(
+          stroke,
+          1 + Math.min(Math.abs(stroke.velocityY) / FALL_STRETCH_DIVISOR, MAX_FALL_STRETCH)
+        );
       }
     });
   };
