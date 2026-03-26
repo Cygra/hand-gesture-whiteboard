@@ -692,7 +692,11 @@ export default function Home() {
 
       activeThree.scene.remove(activeThree.tank);
       activeThree.tank.geometry.dispose();
-      activeThree.tank.material.dispose();
+      if (Array.isArray(activeThree.tank.material)) {
+        activeThree.tank.material.forEach((material) => material.dispose());
+      } else {
+        activeThree.tank.material.dispose();
+      }
 
       const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(width, height, depth));
       const tank = new THREE.LineSegments(
