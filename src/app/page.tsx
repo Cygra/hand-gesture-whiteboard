@@ -55,14 +55,17 @@ const WALL_PADDING_XY = 10;
 const WALL_PADDING_Z = 25;
 const WAVE_PERIOD = 220;
 const WAVE_DEPTH_RATIO = 0.22;
-
-let prevX = 0;
-let prevY = 0;
+const END_CAP_PROTRUSION = 1.12;
+const END_CAP_WIDTH_SEGMENTS = 20;
+const END_CAP_HEIGHT_SEGMENTS = 16;
+const RANDOM_COLLISION_VELOCITY = 6;
 
 type BalloonStroke = {
   id: number;
   points: THREE.Vector3[];
   mesh: THREE.Mesh<THREE.TubeGeometry, THREE.MeshStandardMaterial>;
+  startCap: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
+  endCap: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
   color: THREE.Color;
   velocityY: number;
   settled: boolean;
@@ -85,6 +88,7 @@ export default function Home() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previousDrawPointRef = useRef({ x: 0, y: 0 });
   const landmarkCanvasRef = useRef<HTMLCanvasElement>(null);
   const threeContainerRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<(() => void) | null>(null);
@@ -177,10 +181,27 @@ export default function Home() {
 
     stroke.mesh.geometry.dispose();
     stroke.mesh.geometry = geometry;
+    stroke.startCap.geometry.dispose();
+    stroke.endCap.geometry.dispose();
+    stroke.startCap.geometry = new THREE.SphereGeometry(
+      radius * END_CAP_PROTRUSION,
+      END_CAP_WIDTH_SEGMENTS,
+      END_CAP_HEIGHT_SEGMENTS
+    );
+    stroke.endCap.geometry = new THREE.SphereGeometry(
+      radius * END_CAP_PROTRUSION,
+      END_CAP_WIDTH_SEGMENTS,
+      END_CAP_HEIGHT_SEGMENTS
+    );
+
+    const start = stroke.points[0];
+    const end = stroke.points[stroke.points.length - 1];
+    stroke.startCap.position.copy(start);
+    stroke.endCap.position.copy(end);
 
     const { minY, maxY } = computeBounds(stroke.points);
-    stroke.minY = minY - radius;
-    stroke.maxY = maxY + radius;
+    stroke.minY = minY - radius * END_CAP_PROTRUSION;
+    stroke.maxY = maxY + radius * END_CAP_PROTRUSION;
   };
 
   const clampInsideTank = (point: THREE.Vector3) => {
@@ -231,15 +252,41 @@ export default function Home() {
       ]);
       const starterGeometry = new THREE.TubeGeometry(starterCurve, 8, 11, 12, false);
       const mesh = new THREE.Mesh(starterGeometry, material);
+      const startCap = new THREE.Mesh(
+        new THREE.SphereGeometry(
+          11 * END_CAP_PROTRUSION,
+          END_CAP_WIDTH_SEGMENTS,
+          END_CAP_HEIGHT_SEGMENTS
+        ),
+        material
+      );
+      const endCap = new THREE.Mesh(
+        new THREE.SphereGeometry(
+          11 * END_CAP_PROTRUSION,
+          END_CAP_WIDTH_SEGMENTS,
+          END_CAP_HEIGHT_SEGMENTS
+        ),
+        material
+      );
+      startCap.position.copy(point);
+      endCap.position.copy(point);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      startCap.castShadow = true;
+      startCap.receiveShadow = true;
+      endCap.castShadow = true;
+      endCap.receiveShadow = true;
 
       three.scene.add(mesh);
+      three.scene.add(startCap);
+      three.scene.add(endCap);
 
       const stroke: BalloonStroke = {
         id: ++state.idSeed,
         points: [point],
         mesh,
+        startCap,
+        endCap,
         color,
         velocityY: 0,
         settled: false,
@@ -289,7 +336,11 @@ export default function Home() {
 
     if (stroke.points.length < MIN_POINTS_FOR_BALLOON) {
       threeRef.current?.scene.remove(stroke.mesh);
+      threeRef.current?.scene.remove(stroke.startCap);
+      threeRef.current?.scene.remove(stroke.endCap);
       stroke.mesh.geometry.dispose();
+      stroke.startCap.geometry.dispose();
+      stroke.endCap.geometry.dispose();
       stroke.mesh.material.dispose();
       state.strokes = state.strokes.filter((entry) => entry.id !== stroke.id);
     } else {
@@ -302,8 +353,8 @@ export default function Home() {
     }
 
     state.activeStroke = null;
-    prevX = 0;
-    prevY = 0;
+    previousDrawPointRef.current.x = 0;
+    previousDrawPointRef.current.y = 0;
   };
 
   const drawLandmarks = (
@@ -381,8 +432,8 @@ export default function Home() {
             stroke.velocityX += (dx / distanceXZ) * push * deltaSeconds;
             stroke.velocityZ += (dz / distanceXZ) * push * deltaSeconds;
           } else {
-            stroke.velocityX += (Math.random() - 0.5) * 6;
-            stroke.velocityZ += (Math.random() - 0.5) * 6;
+            stroke.velocityX += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
+            stroke.velocityZ += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
           }
         }
       });
@@ -475,8 +526,8 @@ export default function Home() {
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#041022");
-    scene.fog = new THREE.Fog("#020712", 220, 2100);
+    scene.background = new THREE.Color("#edf7ff");
+    scene.fog = new THREE.Fog("#f5fbff", 300, 2300);
 
     const camera = new THREE.PerspectiveCamera(
       52,
@@ -493,21 +544,21 @@ export default function Home() {
     renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight("#8cd4ff", 0.6);
+    const ambient = new THREE.AmbientLight("#ffffff", 0.86);
     scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight("#9fd8ff", 1.1);
+    const keyLight = new THREE.DirectionalLight("#b8dcff", 1.08);
     keyLight.position.set(220, 300, 500);
     keyLight.castShadow = true;
     scene.add(keyLight);
 
-    const rimLight = new THREE.PointLight("#ff6ef7", 1.2, 2600);
+    const rimLight = new THREE.PointLight("#c58cff", 0.85, 2600);
     rimLight.position.set(-260, 120, 420);
     scene.add(rimLight);
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(window.innerWidth * 1.05, window.innerWidth * 1.05),
-      new THREE.MeshStandardMaterial({ color: "#06213a", roughness: 0.95, metalness: 0.12 })
+      new THREE.MeshStandardMaterial({ color: "#d9ebfb", roughness: 0.92, metalness: 0.08 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -window.innerHeight / 2;
@@ -525,14 +576,14 @@ export default function Home() {
     const edges = new THREE.EdgesGeometry(boxGeometry);
     const tank = new THREE.LineSegments(
       edges,
-      new THREE.LineBasicMaterial({ color: "#66d9ff", transparent: true, opacity: 0.35 })
+      new THREE.LineBasicMaterial({ color: "#6ba7d8", transparent: true, opacity: 0.42 })
     );
     scene.add(tank);
 
     const driftParticles = new THREE.Points(
       new THREE.BufferGeometry(),
       new THREE.PointsMaterial({
-        color: "#8ce6ff",
+        color: "#8bb8db",
         size: 2,
         transparent: true,
         opacity: 0.5,
@@ -618,7 +669,7 @@ export default function Home() {
       const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(width, height, depth));
       const tank = new THREE.LineSegments(
         edges,
-        new THREE.LineBasicMaterial({ color: "#66d9ff", transparent: true, opacity: 0.35 })
+        new THREE.LineBasicMaterial({ color: "#6ba7d8", transparent: true, opacity: 0.42 })
       );
       activeThree.scene.add(tank);
       activeThree.tank = tank;
@@ -697,16 +748,20 @@ export default function Home() {
           const x = (1 - indexFingerTip.x) * width;
           const y = indexFingerTip.y * height;
 
-          if (!prevX && !prevY) {
-            prevX = x;
-            prevY = y;
+          if (!previousDrawPointRef.current.x && !previousDrawPointRef.current.y) {
+            previousDrawPointRef.current.x = x;
+            previousDrawPointRef.current.y = y;
           }
 
-          const smoothedX = prevX + SMOOTHING_FACTOR * (x - prevX);
-          const smoothedY = prevY + SMOOTHING_FACTOR * (y - prevY);
+          const smoothedX =
+            previousDrawPointRef.current.x +
+            SMOOTHING_FACTOR * (x - previousDrawPointRef.current.x);
+          const smoothedY =
+            previousDrawPointRef.current.y +
+            SMOOTHING_FACTOR * (y - previousDrawPointRef.current.y);
           addPointToActiveStroke(smoothedX, smoothedY);
-          prevX = smoothedX;
-          prevY = smoothedY;
+          previousDrawPointRef.current.x = smoothedX;
+          previousDrawPointRef.current.y = smoothedY;
         }
 
         drawLandmarks(landmarks, landmarkCanvasCtx, width, height, isConnected);
@@ -756,7 +811,11 @@ export default function Home() {
       const stream = currentVideo?.srcObject as MediaStream | null;
       stream?.getTracks().forEach((track) => track.stop());
       balloonState.strokes.forEach((stroke) => {
+        threeRef.current?.scene.remove(stroke.startCap);
+        threeRef.current?.scene.remove(stroke.endCap);
         stroke.mesh.geometry.dispose();
+        stroke.startCap.geometry.dispose();
+        stroke.endCap.geometry.dispose();
         stroke.mesh.material.dispose();
       });
     };
@@ -766,7 +825,7 @@ export default function Home() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   return (
-    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-black overflow-hidden">
+    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-[#f4fbff] overflow-hidden">
       <iframe
         src="https://ghbtns.com/github-btn.html?user=Cygra&repo=hand-gesture-whiteboard&type=star&count=true&size=large"
         width="170"
@@ -774,7 +833,7 @@ export default function Home() {
         title="GitHub"
         className="fixed top-2 left-2 z-50"
       />
-      <div className="fixed top-2 underline text-white text-center z-40">
+      <div className="fixed top-2 underline text-[#16334d] text-center z-40">
         {"Connect your index finger tip and thumb tip (like 👌) to create 3D balloons."}
         <br />
         {"连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。"}
@@ -796,7 +855,7 @@ export default function Home() {
         autoPlay
         muted
         className="fixed right-0 bottom-0 w-80 z-30"
-        style={{ transform: "rotateY(180deg)", opacity: 0.88 }}
+        style={{ transform: "rotateY(180deg)", opacity: 0.82 }}
       />
 
       <Button
@@ -809,7 +868,7 @@ export default function Home() {
       </Button>
 
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-        <ModalContent className="bg-[#10082c]">
+        <ModalContent className="bg-[#f8fcff] text-[#17324a]">
           <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
           <ModalBody>
             <p>
