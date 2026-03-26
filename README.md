@@ -6,7 +6,7 @@ A 3D gesture whiteboard built with Next.js, [Mediapipe](https://ai.google.dev/ed
 
 Use hand gestures to draw long colorful balloon strokes inside a 3D fish-tank-like space. Releasing your fingers lets the balloons naturally fall and stack at the bottom.
 
-![example](docs/example.gif)
+<img width="1275" height="766" alt="image" src="https://github.com/user-attachments/assets/13608bf1-fddc-4b65-a50a-f5e9266f5799" />
 
 ## Getting Started
 
