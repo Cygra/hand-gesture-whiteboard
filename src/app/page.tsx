@@ -496,8 +496,9 @@ export default function Home() {
           }
         }
 
-        const incomingSpeed = Math.max(0, -stroke.velocityY);
-        if (incomingSpeed > 0) {
+        const incomingVelocity = -stroke.velocityY;
+        if (incomingVelocity > 0) {
+          const incomingSpeed = incomingVelocity;
           const bouncedSpeed = incomingSpeed * GROUND_RESTITUTION * stroke.bounce;
           stroke.bounce *= QUICK_BOUNCE_DAMPING;
           if (bouncedSpeed > BOUNCE_STOP_SPEED && stroke.bounce > MIN_BOUNCE_FACTOR) {
