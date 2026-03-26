@@ -25,6 +25,7 @@ const SMOOTHING_FACTOR = 0.3;
 const MIN_POINTS_FOR_BALLOON = 6;
 const GRAVITY = 900;
 const FALL_DAMPING = 0.9;
+const MAX_FRAME_TIME_SECONDS = 0.033;
 
 let prevX = 0;
 let prevY = 0;
@@ -49,6 +50,7 @@ export default function Home() {
   const landmarkCanvasRef = useRef<HTMLCanvasElement>(null);
   const threeContainerRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<(() => void) | null>(null);
+  const canvasSizeRef = useRef({ width: 0, height: 0 });
 
   const balloonStateRef = useRef<{
     strokes: BalloonStroke[];
@@ -129,8 +131,8 @@ export default function Home() {
 
     const state = balloonStateRef.current;
     const depth = state.tankDepth;
-    const worldX = x - canvasSize[0] / 2;
-    const worldY = canvasSize[1] / 2 - y;
+    const worldX = x - canvasSizeRef.current.width / 2;
+    const worldY = canvasSizeRef.current.height / 2 - y;
     const wave = Math.sin(performance.now() / 220 + state.idSeed) * (depth * 0.22);
     const worldZ = wave;
 
@@ -265,7 +267,12 @@ export default function Home() {
         }
       });
 
-      const currentBottom = Math.min(...stroke.points.map((point) => point.y));
+      let currentBottom = Number.POSITIVE_INFINITY;
+      stroke.points.forEach((point) => {
+        if (point.y < currentBottom) {
+          currentBottom = point.y;
+        }
+      });
       if (currentBottom <= targetBottom) {
         const correction = targetBottom - currentBottom;
         stroke.points.forEach((point) => {
@@ -387,7 +394,10 @@ export default function Home() {
     const animate = () => {
       if (!threeRef.current) return;
       const now = performance.now();
-      const deltaSeconds = Math.min((now - previous) / 1000, 0.033);
+      const deltaSeconds = Math.min(
+        (now - previous) / 1000,
+        MAX_FRAME_TIME_SECONDS
+      );
       previous = now;
 
       stepPhysics(deltaSeconds);
@@ -484,7 +494,10 @@ export default function Home() {
       }
 
       lastWebcamTime = video.currentTime;
-      const result = gestureRecognizer.recognizeForVideo(video, performance.now());
+      const result = gestureRecognizer.recognizeForVideo(
+        video,
+        video.currentTime * 1000
+      );
       const width = landmarkCanvas.width;
       const height = landmarkCanvas.height;
 
@@ -541,7 +554,10 @@ export default function Home() {
     prepareVideoStream();
 
     const handleResize = () => {
-      setCanvasSize([window.innerWidth, window.innerHeight]);
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      canvasSizeRef.current = { width, height };
+      setCanvasSize([width, height]);
       resizeRef.current?.();
     };
 
