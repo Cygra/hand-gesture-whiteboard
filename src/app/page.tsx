@@ -57,6 +57,8 @@ const WALL_PADDING_XY = 10;
 const WALL_PADDING_Z = 25;
 const WAVE_PERIOD = 220;
 const WAVE_DEPTH_RATIO = 0.22;
+// Slightly larger spacing keeps settled balloons visually separated instead of intersecting.
+const COLLISION_SPACING_MULTIPLIER = 2.2;
 const END_CAP_PROTRUSION = 1.12;
 const END_CAP_WIDTH_SEGMENTS = 20;
 const END_CAP_HEIGHT_SEGMENTS = 16;
@@ -696,7 +698,9 @@ export default function Home() {
         const dx = centerA.x - centerB.x;
         const dz = centerA.z - centerB.z;
         const distanceXZ = Math.sqrt(dx * dx + dz * dz);
-        const allowed = stroke.baseRadius * 2.2 + other.baseRadius * 2.2;
+        const allowed =
+          stroke.baseRadius * COLLISION_SPACING_MULTIPLIER +
+          other.baseRadius * COLLISION_SPACING_MULTIPLIER;
         if (distanceXZ < allowed) {
           targetBottom = Math.max(targetBottom, other.maxY + stroke.baseRadius * 1.05);
           if (distanceXZ > 0.001) {
