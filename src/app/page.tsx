@@ -65,9 +65,21 @@ const GLOBAL_WIND_DECAY = 2.4;
 const MAX_GESTURE_WIND = 200;
 const GESTURE_WAVE_SPEED_THRESHOLD = 180;
 const GESTURE_WAVE_TO_WIND = 0.11;
+const MAX_GESTURE_WIND_DELTA = 40;
 const EXTERNAL_WAKE_SPEED = 26;
+const COLLISION_WAKE_SCALE = 0.45;
+const COLLISION_RECIPROCAL_SCALE = 0.5;
+// A settled balloon should wake up from weaker collision impulse than direct wind wake.
+const COLLISION_WAKE_THRESHOLD = EXTERNAL_WAKE_SPEED * COLLISION_WAKE_SCALE;
 const SETTLE_CONFIRM_FRAMES = 12;
-const ENDPOINT_SETTLE_THRESHOLD = CONTACT_THRESHOLD_Y * 1.6;
+const ENDPOINT_SETTLE_MULTIPLIER = 1.6;
+const ENDPOINT_CONTACT_SETTLE_THRESHOLD = CONTACT_THRESHOLD_Y * ENDPOINT_SETTLE_MULTIPLIER;
+const OPEN_PALM_GESTURES = ["Open_Palm", "OpenPalm"];
+const FIST_GESTURES = ["Closed_Fist", "Fist"];
+const THEME_TOGGLE_GESTURES = ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"];
+const FEATURE_HINT_TEXT =
+  "Open palm wave to blow wind. Fist clears balloons after 3s. ✌️ (Victory) / 👍 (Thumbs Up) toggles theme.";
+const CLEAR_COUNTDOWN_LABEL = "✊ 清空气球倒计时 / Clear balloons in";
 
 type BalloonStroke = {
   id: number;
@@ -462,7 +474,14 @@ export default function Home() {
   };
 
   const startClearCountdown = () => {
-    if (countdownTimeoutRef.current || countdownIntervalRef.current) return;
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    if (countdownTimeoutRef.current) {
+      clearTimeout(countdownTimeoutRef.current);
+      countdownTimeoutRef.current = null;
+    }
 
     let remaining = 3;
     setClearCountdown(remaining);
@@ -483,6 +502,18 @@ export default function Home() {
       }
       countdownTimeoutRef.current = null;
     }, 3000);
+  };
+
+  const cancelClearCountdown = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    if (countdownTimeoutRef.current) {
+      clearTimeout(countdownTimeoutRef.current);
+      countdownTimeoutRef.current = null;
+    }
+    setClearCountdown(null);
   };
 
   const toggleThemeMode = () => {
@@ -581,18 +612,22 @@ export default function Home() {
             const push = ((allowed - distanceXZ) / allowed) * COLLISION_PUSH_FORCE;
             stroke.velocityX += (dx / distanceXZ) * push * deltaSeconds;
             stroke.velocityZ += (dz / distanceXZ) * push * deltaSeconds;
-            other.velocityX -= (dx / distanceXZ) * push * deltaSeconds * 0.5;
-            other.velocityZ -= (dz / distanceXZ) * push * deltaSeconds * 0.5;
+            other.velocityX -=
+              (dx / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
+            other.velocityZ -=
+              (dz / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
           } else {
             stroke.velocityX += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
             stroke.velocityZ += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
-            other.velocityX += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * 0.5;
-            other.velocityZ += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * 0.5;
+            other.velocityX +=
+              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
+            other.velocityZ +=
+              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
           }
 
           if (other.settled) {
             const otherPushSpeed = Math.hypot(other.velocityX, other.velocityZ);
-            if (otherPushSpeed > EXTERNAL_WAKE_SPEED * 0.45) {
+            if (otherPushSpeed > COLLISION_WAKE_THRESHOLD) {
               other.settled = false;
               other.settleFrames = 0;
             }
@@ -667,8 +702,8 @@ export default function Home() {
         const startPoint = stroke.points[0];
         const endPoint = stroke.points[stroke.points.length - 1];
         const endpointsStable =
-          Math.abs(startPoint.y - targetBottom) < ENDPOINT_SETTLE_THRESHOLD &&
-          Math.abs(endPoint.y - targetBottom) < ENDPOINT_SETTLE_THRESHOLD;
+          Math.abs(startPoint.y - targetBottom) < ENDPOINT_CONTACT_SETTLE_THRESHOLD &&
+          Math.abs(endPoint.y - targetBottom) < ENDPOINT_CONTACT_SETTLE_THRESHOLD;
         const multiContactCount = stroke.points.filter(
           (point) => point.y <= targetBottom + MULTI_CONTACT_THRESHOLD
         ).length;
@@ -943,12 +978,10 @@ export default function Home() {
       result.landmarks.forEach((landmarks, handIndex) => {
         const handGestures = result.gestures?.[handIndex] ?? [];
         const categories = handGestures.map((gesture) => gesture.categoryName);
-        const hasOpenPalm = categories.some((category) =>
-          ["Open_Palm", "OpenPalm"].includes(category)
-        );
-        const hasFist = categories.some((category) => category === "Closed_Fist" || category === "Fist");
+        const hasOpenPalm = categories.some((category) => OPEN_PALM_GESTURES.includes(category));
+        const hasFist = categories.some((category) => FIST_GESTURES.includes(category));
         const hasThemeToggleGesture = categories.some((category) =>
-          ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"].includes(category)
+          THEME_TOGGLE_GESTURES.includes(category)
         );
 
         openPalmDetected = openPalmDetected || hasOpenPalm;
@@ -989,6 +1022,7 @@ export default function Home() {
         const hand = result.landmarks[0];
         const wrist = hand?.[0];
         if (wrist) {
+          // Mirror x to match the camera-flipped canvas so waving direction aligns with user perspective.
           const wristX = (1 - wrist.x) * width;
           const now = performance.now();
           const waveState = waveGestureStateRef.current;
@@ -1002,7 +1036,9 @@ export default function Home() {
             if (deltaTime > 0) {
               const speed = deltaX / deltaTime;
               if (Math.abs(speed) > GESTURE_WAVE_SPEED_THRESHOLD) {
-                const windDelta = Math.sign(speed) * Math.min(40, Math.abs(speed) * GESTURE_WAVE_TO_WIND);
+                const windDelta =
+                  Math.sign(speed) *
+                  Math.min(MAX_GESTURE_WIND_DELTA, Math.abs(speed) * GESTURE_WAVE_TO_WIND);
                 windStateRef.current.x = Math.max(
                   -MAX_GESTURE_WIND,
                   Math.min(MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
@@ -1024,6 +1060,7 @@ export default function Home() {
         }
       } else {
         fistHoldRef.current = false;
+        cancelClearCountdown();
       }
 
       if (themeGestureDetected) {
@@ -1108,7 +1145,9 @@ export default function Home() {
     three.scene.fog = new THREE.Fog(palette.fog, 300, 2300);
     three.floor.material.color.set(palette.floor);
     const tankMaterial = three.tank.material;
-    if (!Array.isArray(tankMaterial)) {
+    if (Array.isArray(tankMaterial)) {
+      tankMaterial.forEach((material) => material.color.set(palette.tank));
+    } else {
       tankMaterial.color.set(palette.tank);
     }
     three.driftParticles.material.color.set(palette.particle);
@@ -1136,7 +1175,7 @@ export default function Home() {
         <br />
         {"连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。"}
         <br />
-        {"Open palm wave to blow wind. Fist clears balloons after 3s. ✌️/👍 toggles theme."}
+        {FEATURE_HINT_TEXT}
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
@@ -1188,7 +1227,7 @@ export default function Home() {
               borderColor: THEME_PALETTES[themeMode].tank,
             }}
           >
-            <div>✊ 清空气球倒计时 / Clear balloons in</div>
+            <div>{CLEAR_COUNTDOWN_LABEL}</div>
             <div className="text-4xl mt-1">{clearCountdown}</div>
           </div>
         </div>
