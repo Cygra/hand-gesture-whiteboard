@@ -63,9 +63,9 @@ const END_CAP_HEIGHT_SEGMENTS = 16;
 const RANDOM_COLLISION_VELOCITY = 6;
 const GLOBAL_WIND_DECAY = 2.4;
 const MAX_GESTURE_WIND = 200;
-const GESTURE_WAVE_SPEED_THRESHOLD = 180;
 const GESTURE_WAVE_TO_WIND = 0.11;
 const MAX_GESTURE_WIND_DELTA = 40;
+const OPEN_PALM_POSE_BIAS = 6;
 const EXTERNAL_WAKE_SPEED = 26;
 const COLLISION_WAKE_SCALE = 0.45;
 const COLLISION_RECIPROCAL_SCALE = 0.5;
@@ -77,9 +77,15 @@ const ENDPOINT_CONTACT_SETTLE_THRESHOLD = CONTACT_THRESHOLD_Y * ENDPOINT_SETTLE_
 const OPEN_PALM_GESTURES = ["Open_Palm", "OpenPalm"];
 const FIST_GESTURES = ["Closed_Fist", "Fist"];
 const THEME_TOGGLE_GESTURES = ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"];
+const GESTURE_HOLD_CONFIRM_MS = 3000;
+const GESTURE_HOLD_JITTER_GRACE_MS = 180;
 const FEATURE_HINT_TEXT =
-  "Open palm wave to blow wind. Fist clears balloons after 3s. ✌️ (Victory) / 👍 (Thumbs Up) toggles theme.";
-const CLEAR_COUNTDOWN_LABEL = "✊ 清空气球倒计时 / Clear balloons in";
+  "👌 draw balloons | 🖐️ open palm wave for wind | ✊ hold 3s to clear | ✌️/👍 hold 3s to toggle theme.";
+const HOLD_CLEAR_LABEL = "✊ 持续握拳 3 秒清空气球 / Hold fist 3s to clear";
+const HOLD_THEME_LABEL = "✌️/👍 持续 3 秒切换主题 / Hold Victory or Thumbs Up 3s to toggle theme";
+const JITTER_GRACE_SECONDS_TEXT = (GESTURE_HOLD_JITTER_GRACE_MS / 1000).toFixed(2);
+
+type HoldActionType = "clear" | "theme";
 
 type BalloonStroke = {
   id: number;
@@ -149,7 +155,10 @@ const THEME_PALETTES: Record<
 export default function Home() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
-  const [clearCountdown, setClearCountdown] = useState<number | null>(null);
+  const [holdCountdown, setHoldCountdown] = useState<{
+    action: HoldActionType;
+    seconds: number;
+  } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousDrawPointRef = useRef({ x: 0, y: 0 });
@@ -191,10 +200,19 @@ export default function Home() {
     lastTime: 0,
   });
   const windStateRef = useRef({ x: 0, z: 0 });
-  const fistHoldRef = useRef(false);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const themeGestureHoldRef = useRef(false);
+  const holdStateRef = useRef<{
+    action: HoldActionType | null;
+    token: number;
+    startedAt: number;
+    pendingLostAt: number | null;
+    lastShownSecond: number;
+  }>({
+    action: null,
+    token: 0,
+    startedAt: 0,
+    pendingLostAt: null,
+    lastShownSecond: 0,
+  });
 
   const randomBalloonColor = () => {
     const hue = Math.random();
@@ -304,7 +322,7 @@ export default function Home() {
     stroke.maxY = maxY + radius * END_CAP_PROTRUSION;
   };
 
-  const clampInsideTank = (point: THREE.Vector3) => {
+  const clampInsideTank = (point: THREE.Vector3, clampY = true) => {
     const three = threeRef.current;
     if (!three) return;
 
@@ -312,10 +330,12 @@ export default function Home() {
       three.rightWall - WALL_PADDING_XY,
       Math.max(three.leftWall + WALL_PADDING_XY, point.x)
     );
-    point.y = Math.min(
-      three.topWall - WALL_PADDING_XY,
-      Math.max(three.bottomWall + WALL_PADDING_XY, point.y)
-    );
+    if (clampY) {
+      point.y = Math.min(
+        three.topWall - WALL_PADDING_XY,
+        Math.max(three.bottomWall + WALL_PADDING_XY, point.y)
+      );
+    }
     point.z = Math.min(
       three.frontWall - WALL_PADDING_Z,
       Math.max(three.backWall + WALL_PADDING_Z, point.z)
@@ -450,7 +470,7 @@ export default function Home() {
       stroke.landed = false;
       stroke.toppling = false;
       stroke.angularVelocity = 0;
-      rebuildBalloonGeometry(stroke, 1.05);
+      rebuildBalloonGeometry(stroke, 1);
     }
 
     state.activeStroke = null;
@@ -473,47 +493,56 @@ export default function Home() {
     state.strokes = [];
   };
 
-  const startClearCountdown = () => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
-    if (countdownTimeoutRef.current) {
-      clearTimeout(countdownTimeoutRef.current);
-      countdownTimeoutRef.current = null;
-    }
-
-    let remaining = 3;
-    setClearCountdown(remaining);
-
-    countdownIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining > 0) {
-        setClearCountdown(remaining);
-      }
-    }, 1000);
-
-    countdownTimeoutRef.current = setTimeout(() => {
-      clearAllStrokes();
-      setClearCountdown(null);
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-      countdownTimeoutRef.current = null;
-    }, 3000);
+  const clearHoldCountdown = () => {
+    holdStateRef.current.action = null;
+    holdStateRef.current.pendingLostAt = null;
+    holdStateRef.current.lastShownSecond = 0;
+    setHoldCountdown(null);
   };
 
-  const cancelClearCountdown = () => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
+  const updateHoldGesture = (
+    action: HoldActionType,
+    isDetected: boolean,
+    nowMs: number,
+    onConfirm: () => void
+  ) => {
+    const hold = holdStateRef.current;
+
+    if (hold.action === action) {
+      if (isDetected) {
+        hold.pendingLostAt = null;
+      } else if (!hold.pendingLostAt) {
+        hold.pendingLostAt = nowMs;
+      } else if (nowMs - hold.pendingLostAt > GESTURE_HOLD_JITTER_GRACE_MS) {
+        clearHoldCountdown();
+        return;
+      }
+
+      const elapsed = nowMs - hold.startedAt;
+      const remainSeconds = Math.max(1, Math.ceil((GESTURE_HOLD_CONFIRM_MS - elapsed) / 1000));
+      if (hold.lastShownSecond !== remainSeconds) {
+        hold.lastShownSecond = remainSeconds;
+        setHoldCountdown({ action, seconds: remainSeconds });
+      }
+
+      if (elapsed >= GESTURE_HOLD_CONFIRM_MS) {
+        clearHoldCountdown();
+        onConfirm();
+      }
+      return;
     }
-    if (countdownTimeoutRef.current) {
-      clearTimeout(countdownTimeoutRef.current);
-      countdownTimeoutRef.current = null;
+
+    if (!isDetected) {
+      return;
     }
-    setClearCountdown(null);
+
+    clearHoldCountdown();
+    hold.action = action;
+    hold.token += 1;
+    hold.startedAt = nowMs;
+    hold.pendingLostAt = null;
+    hold.lastShownSecond = 3;
+    setHoldCountdown({ action, seconds: 3 });
   };
 
   const toggleThemeMode = () => {
@@ -592,7 +621,7 @@ export default function Home() {
         point.x += offsetX;
         point.y += offsetY;
         point.z += offsetZ;
-        clampInsideTank(point);
+        clampInsideTank(point, false);
       });
 
       let targetBottom = three.bottomWall + stroke.baseRadius;
@@ -964,8 +993,7 @@ export default function Home() {
         landmarkCanvasCtx.clearRect(0, 0, width, height);
         releaseActiveStroke();
         waveGestureStateRef.current.active = false;
-        themeGestureHoldRef.current = false;
-        fistHoldRef.current = false;
+        clearHoldCountdown();
         requestAnimationFrame(renderLoop);
         return;
       }
@@ -1035,42 +1063,38 @@ export default function Home() {
             const deltaTime = (now - waveState.lastTime) / 1000;
             if (deltaTime > 0) {
               const speed = deltaX / deltaTime;
-              if (Math.abs(speed) > GESTURE_WAVE_SPEED_THRESHOLD) {
-                const windDelta =
-                  Math.sign(speed) *
-                  Math.min(MAX_GESTURE_WIND_DELTA, Math.abs(speed) * GESTURE_WAVE_TO_WIND);
-                windStateRef.current.x = Math.max(
-                  -MAX_GESTURE_WIND,
-                  Math.min(MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
-                );
-              }
+              const windDelta =
+                Math.sign(speed) *
+                Math.min(MAX_GESTURE_WIND_DELTA, Math.abs(speed) * GESTURE_WAVE_TO_WIND);
+              windStateRef.current.x = Math.max(
+                -MAX_GESTURE_WIND,
+                Math.min(MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
+              );
             }
             waveState.lastX = wristX;
             waveState.lastTime = now;
           }
+
+          windStateRef.current.x = Math.max(
+            -MAX_GESTURE_WIND,
+            Math.min(
+              MAX_GESTURE_WIND,
+              windStateRef.current.x +
+                ((wristX - width / 2) / width) * OPEN_PALM_POSE_BIAS
+            )
+          );
         }
       } else {
         waveGestureStateRef.current.active = false;
       }
 
-      if (fistDetected) {
-        if (!fistHoldRef.current) {
-          fistHoldRef.current = true;
-          startClearCountdown();
-        }
-      } else {
-        fistHoldRef.current = false;
-        cancelClearCountdown();
-      }
-
-      if (themeGestureDetected) {
-        if (!themeGestureHoldRef.current) {
-          themeGestureHoldRef.current = true;
-          toggleThemeMode();
-        }
-      } else {
-        themeGestureHoldRef.current = false;
-      }
+      const nowMs = performance.now();
+      updateHoldGesture("clear", fistDetected, nowMs, () => {
+        clearAllStrokes();
+      });
+      updateHoldGesture("theme", themeGestureDetected, nowMs, () => {
+        toggleThemeMode();
+      });
 
       if (!isConnected) {
         releaseActiveStroke();
@@ -1115,14 +1139,7 @@ export default function Home() {
 
       const stream = currentVideo?.srcObject as MediaStream | null;
       stream?.getTracks().forEach((track) => track.stop());
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-      if (countdownTimeoutRef.current) {
-        clearTimeout(countdownTimeoutRef.current);
-        countdownTimeoutRef.current = null;
-      }
+      clearHoldCountdown();
       balloonState.strokes.forEach((stroke) => {
         threeRef.current?.scene.remove(stroke.startCap);
         threeRef.current?.scene.remove(stroke.endCap);
@@ -1176,6 +1193,8 @@ export default function Home() {
         {"连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。"}
         <br />
         {FEATURE_HINT_TEXT}
+        <br />
+        {`If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`}
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
@@ -1215,7 +1234,7 @@ export default function Home() {
         About
       </Button>
 
-      {clearCountdown !== null && (
+      {holdCountdown !== null && (
         <div
           className="fixed inset-0 z-45 flex items-center justify-center pointer-events-none"
           style={{ color: THEME_PALETTES[themeMode].text }}
@@ -1227,8 +1246,10 @@ export default function Home() {
               borderColor: THEME_PALETTES[themeMode].tank,
             }}
           >
-            <div>{CLEAR_COUNTDOWN_LABEL}</div>
-            <div className="text-4xl mt-1">{clearCountdown}</div>
+            <div>
+              {holdCountdown.action === "clear" ? HOLD_CLEAR_LABEL : HOLD_THEME_LABEL}
+            </div>
+            <div className="text-4xl mt-1">{holdCountdown.seconds}</div>
           </div>
         </div>
       )}
