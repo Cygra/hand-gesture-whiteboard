@@ -62,13 +62,19 @@ const END_CAP_WIDTH_SEGMENTS = 20;
 const END_CAP_HEIGHT_SEGMENTS = 16;
 const RANDOM_COLLISION_VELOCITY = 6;
 const GLOBAL_WIND_DECAY = 2.4;
+const GESTURE_WIND_MULTIPLIER = 20;
 const MAX_GESTURE_WIND = 360;
 const GESTURE_WAVE_TO_WIND = 0.2;
 const MAX_GESTURE_WIND_DELTA = 80;
 const OPEN_PALM_POSE_BIAS = 10;
+const SCALED_MAX_GESTURE_WIND = MAX_GESTURE_WIND * GESTURE_WIND_MULTIPLIER;
+const SCALED_MAX_GESTURE_WIND_DELTA = MAX_GESTURE_WIND_DELTA * GESTURE_WIND_MULTIPLIER;
+const SCALED_GESTURE_WAVE_TO_WIND = GESTURE_WAVE_TO_WIND * GESTURE_WIND_MULTIPLIER;
+const SCALED_OPEN_PALM_POSE_BIAS = OPEN_PALM_POSE_BIAS * GESTURE_WIND_MULTIPLIER;
 const EXTERNAL_WAKE_SPEED = 26;
 const COLLISION_WAKE_SCALE = 0.45;
 const COLLISION_RECIPROCAL_SCALE = 0.5;
+const WALL_RESTITUTION = 0.28;
 // A settled balloon should wake up from weaker collision impulse than direct wind wake.
 const COLLISION_WAKE_THRESHOLD = EXTERNAL_WAKE_SPEED * COLLISION_WAKE_SCALE;
 const SETTLE_CONFIRM_FRAMES = 12;
@@ -634,6 +640,26 @@ export default function Home() {
         clampInsideTank(point, false);
       });
 
+      const tank = threeRef.current;
+      if (tank) {
+        const leftLimit = tank.leftWall + WALL_PADDING_XY;
+        const rightLimit = tank.rightWall - WALL_PADDING_XY;
+        const topLimit = tank.topWall - WALL_PADDING_XY;
+        const hitLeftWall = stroke.points.some((point) => point.x <= leftLimit + 0.001);
+        const hitRightWall = stroke.points.some((point) => point.x >= rightLimit - 0.001);
+        const hitTopWall = stroke.points.some((point) => point.y >= topLimit - 0.001);
+
+        if (hitLeftWall && stroke.velocityX < 0) {
+          stroke.velocityX = -stroke.velocityX * WALL_RESTITUTION;
+        } else if (hitRightWall && stroke.velocityX > 0) {
+          stroke.velocityX = -stroke.velocityX * WALL_RESTITUTION;
+        }
+
+        if (hitTopWall && stroke.velocityY > 0) {
+          stroke.velocityY = -stroke.velocityY * WALL_RESTITUTION;
+        }
+      }
+
       let targetBottom = three.bottomWall + stroke.baseRadius;
 
       settled.forEach((other) => {
@@ -1032,9 +1058,11 @@ export default function Home() {
 
         const dx = Math.abs((thumbTip.x - indexFingerTip.x) * width);
         const dy = Math.abs((thumbTip.y - indexFingerTip.y) * height);
-        isConnected = dx < 50 && dy < 50;
+        const pinchConnected = dx < 50 && dy < 50;
+        const canDrawFromPinch = pinchConnected && !hasFist;
+        isConnected = isConnected || canDrawFromPinch;
 
-        if (isConnected) {
+        if (canDrawFromPinch) {
           const x = (1 - indexFingerTip.x) * width;
           const y = indexFingerTip.y * height;
 
@@ -1054,7 +1082,7 @@ export default function Home() {
           previousDrawPointRef.current.y = smoothedY;
         }
 
-        drawLandmarks(landmarks, landmarkCanvasCtx, width, height, isConnected);
+        drawLandmarks(landmarks, landmarkCanvasCtx, width, height, canDrawFromPinch);
       });
 
       if (openPalmDetected) {
@@ -1076,10 +1104,10 @@ export default function Home() {
               const speed = deltaX / deltaTime;
               const windDelta =
                 Math.sign(speed) *
-                Math.min(MAX_GESTURE_WIND_DELTA, Math.abs(speed) * GESTURE_WAVE_TO_WIND);
+                Math.min(SCALED_MAX_GESTURE_WIND_DELTA, Math.abs(speed) * SCALED_GESTURE_WAVE_TO_WIND);
               windStateRef.current.x = Math.max(
-                -MAX_GESTURE_WIND,
-                Math.min(MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
+                -SCALED_MAX_GESTURE_WIND,
+                Math.min(SCALED_MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
               );
             }
             waveState.lastX = wristX;
@@ -1087,11 +1115,10 @@ export default function Home() {
           }
 
           windStateRef.current.x = Math.max(
-            -MAX_GESTURE_WIND,
+            -SCALED_MAX_GESTURE_WIND,
             Math.min(
-              MAX_GESTURE_WIND,
-              windStateRef.current.x +
-                ((wristX - width / 2) / width) * OPEN_PALM_POSE_BIAS
+              SCALED_MAX_GESTURE_WIND,
+              windStateRef.current.x + ((wristX - width / 2) / width) * SCALED_OPEN_PALM_POSE_BIAS
             )
           );
         }
