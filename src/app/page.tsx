@@ -71,6 +71,13 @@ const SCALED_MAX_GESTURE_WIND = MAX_GESTURE_WIND * GESTURE_WIND_MULTIPLIER;
 const SCALED_MAX_GESTURE_WIND_DELTA = MAX_GESTURE_WIND_DELTA * GESTURE_WIND_MULTIPLIER;
 const SCALED_GESTURE_WAVE_TO_WIND = GESTURE_WAVE_TO_WIND * GESTURE_WIND_MULTIPLIER;
 const SCALED_OPEN_PALM_POSE_BIAS = OPEN_PALM_POSE_BIAS * GESTURE_WIND_MULTIPLIER;
+const SCALED_MAX_GESTURE_VERTICAL_WIND = SCALED_MAX_GESTURE_WIND * 0.35;
+const SCALED_MAX_GESTURE_VERTICAL_WIND_DELTA = SCALED_MAX_GESTURE_WIND_DELTA * 0.35;
+const SCALED_OPEN_PALM_POSE_BIAS_Y = SCALED_OPEN_PALM_POSE_BIAS * 0.35;
+const SCALED_MAX_GESTURE_DEPTH_WIND = SCALED_MAX_GESTURE_WIND * 0.3;
+const SCALED_MAX_GESTURE_DEPTH_WIND_DELTA = SCALED_MAX_GESTURE_WIND_DELTA * 0.3;
+const SCALED_OPEN_PALM_POSE_BIAS_Z = SCALED_OPEN_PALM_POSE_BIAS * 0.3;
+const GESTURE_WIND_BLEND_RATE = 7;
 const EXTERNAL_WAKE_SPEED = 26;
 const COLLISION_WAKE_SCALE = 0.45;
 const COLLISION_RECIPROCAL_SCALE = 0.5;
@@ -200,12 +207,21 @@ export default function Home() {
     backWall: number;
     frontWall: number;
   } | null>(null);
-  const waveGestureStateRef = useRef<{ active: boolean; lastX: number; lastTime: number }>({
+  const waveGestureStateRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+    lastZ: number;
+    lastTime: number;
+  }>({
     active: false,
     lastX: 0,
+    lastY: 0,
+    lastZ: 0,
     lastTime: 0,
   });
-  const windStateRef = useRef({ x: 0, z: 0 });
+  const windStateRef = useRef({ x: 0, y: 0, z: 0 });
+  const windTargetRef = useRef({ x: 0, y: 0, z: 0 });
   const holdStateRef = useRef<{
     action: HoldActionType | null;
     token: number;
@@ -590,8 +606,13 @@ export default function Home() {
 
     const state = balloonStateRef.current;
     const settled = state.strokes.filter((stroke) => stroke.settled);
-    windStateRef.current.x -= windStateRef.current.x * GLOBAL_WIND_DECAY * deltaSeconds;
-    windStateRef.current.z -= windStateRef.current.z * GLOBAL_WIND_DECAY * deltaSeconds;
+    windTargetRef.current.x -= windTargetRef.current.x * GLOBAL_WIND_DECAY * deltaSeconds;
+    windTargetRef.current.y -= windTargetRef.current.y * GLOBAL_WIND_DECAY * deltaSeconds;
+    windTargetRef.current.z -= windTargetRef.current.z * GLOBAL_WIND_DECAY * deltaSeconds;
+    const windBlend = Math.min(1, GESTURE_WIND_BLEND_RATE * deltaSeconds);
+    windStateRef.current.x += (windTargetRef.current.x - windStateRef.current.x) * windBlend;
+    windStateRef.current.y += (windTargetRef.current.y - windStateRef.current.y) * windBlend;
+    windStateRef.current.z += (windTargetRef.current.z - windStateRef.current.z) * windBlend;
 
     state.strokes.forEach((stroke) => {
       if (stroke === state.activeStroke || stroke.points.length < 2) {
@@ -599,7 +620,11 @@ export default function Home() {
       }
 
       if (stroke.settled) {
-        const windSpeed = Math.hypot(windStateRef.current.x, windStateRef.current.z);
+        const windSpeed = Math.hypot(
+          windStateRef.current.x,
+          windStateRef.current.y,
+          windStateRef.current.z
+        );
         const collisionSpeed = Math.hypot(stroke.velocityX, stroke.velocityZ);
         if (windSpeed + collisionSpeed > EXTERNAL_WAKE_SPEED) {
           stroke.settled = false;
@@ -623,6 +648,7 @@ export default function Home() {
       }
 
       stroke.velocityX += windStateRef.current.x * deltaSeconds;
+      stroke.velocityY += windStateRef.current.y * deltaSeconds;
       stroke.velocityZ += windStateRef.current.z * deltaSeconds;
 
       const lateralDamping = stroke.settled ? SETTLED_LATERAL_DAMPING : LATERAL_DAMPING;
@@ -1091,34 +1117,86 @@ export default function Home() {
         if (wrist) {
           // Mirror x to match the camera-flipped canvas so waving direction aligns with user perspective.
           const wristX = (1 - wrist.x) * width;
+          const wristY = wrist.y * height;
+          const wristZ = wrist.z;
           const now = performance.now();
           const waveState = waveGestureStateRef.current;
           if (!waveState.active) {
             waveState.active = true;
             waveState.lastX = wristX;
+            waveState.lastY = wristY;
+            waveState.lastZ = wristZ;
             waveState.lastTime = now;
           } else {
             const deltaX = wristX - waveState.lastX;
+            const deltaY = wristY - waveState.lastY;
+            const deltaZ = wristZ - waveState.lastZ;
             const deltaTime = (now - waveState.lastTime) / 1000;
             if (deltaTime > 0) {
-              const speed = deltaX / deltaTime;
-              const windDelta =
-                Math.sign(speed) *
-                Math.min(SCALED_MAX_GESTURE_WIND_DELTA, Math.abs(speed) * SCALED_GESTURE_WAVE_TO_WIND);
-              windStateRef.current.x = Math.max(
+              const speedX = deltaX / deltaTime;
+              const speedY = deltaY / deltaTime;
+              const speedZ = deltaZ / deltaTime;
+              const windDeltaX =
+                Math.sign(speedX) *
+                Math.min(
+                  SCALED_MAX_GESTURE_WIND_DELTA,
+                  Math.abs(speedX) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              const windDeltaY =
+                -Math.sign(speedY) *
+                Math.min(
+                  SCALED_MAX_GESTURE_VERTICAL_WIND_DELTA,
+                  Math.abs(speedY) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              const windDeltaZ =
+                -Math.sign(speedZ) *
+                Math.min(
+                  SCALED_MAX_GESTURE_DEPTH_WIND_DELTA,
+                  Math.abs(speedZ) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              windTargetRef.current.x = Math.max(
                 -SCALED_MAX_GESTURE_WIND,
-                Math.min(SCALED_MAX_GESTURE_WIND, windStateRef.current.x + windDelta)
+                Math.min(SCALED_MAX_GESTURE_WIND, windTargetRef.current.x + windDeltaX)
+              );
+              windTargetRef.current.y = Math.max(
+                -SCALED_MAX_GESTURE_VERTICAL_WIND,
+                Math.min(
+                  SCALED_MAX_GESTURE_VERTICAL_WIND,
+                  windTargetRef.current.y + windDeltaY
+                )
+              );
+              windTargetRef.current.z = Math.max(
+                -SCALED_MAX_GESTURE_DEPTH_WIND,
+                Math.min(SCALED_MAX_GESTURE_DEPTH_WIND, windTargetRef.current.z + windDeltaZ)
               );
             }
             waveState.lastX = wristX;
+            waveState.lastY = wristY;
+            waveState.lastZ = wristZ;
             waveState.lastTime = now;
           }
 
-          windStateRef.current.x = Math.max(
+          windTargetRef.current.x = Math.max(
             -SCALED_MAX_GESTURE_WIND,
             Math.min(
               SCALED_MAX_GESTURE_WIND,
-              windStateRef.current.x + ((wristX - width / 2) / width) * SCALED_OPEN_PALM_POSE_BIAS
+              windTargetRef.current.x +
+                ((wristX - width / 2) / width) * SCALED_OPEN_PALM_POSE_BIAS
+            )
+          );
+          windTargetRef.current.y = Math.max(
+            -SCALED_MAX_GESTURE_VERTICAL_WIND,
+            Math.min(
+              SCALED_MAX_GESTURE_VERTICAL_WIND,
+              windTargetRef.current.y +
+                ((height / 2 - wristY) / height) * SCALED_OPEN_PALM_POSE_BIAS_Y
+            )
+          );
+          windTargetRef.current.z = Math.max(
+            -SCALED_MAX_GESTURE_DEPTH_WIND,
+            Math.min(
+              SCALED_MAX_GESTURE_DEPTH_WIND,
+              windTargetRef.current.z - wristZ * SCALED_OPEN_PALM_POSE_BIAS_Z
             )
           );
         }
