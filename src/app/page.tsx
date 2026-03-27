@@ -62,7 +62,7 @@ const END_CAP_WIDTH_SEGMENTS = 20;
 const END_CAP_HEIGHT_SEGMENTS = 16;
 const RANDOM_COLLISION_VELOCITY = 6;
 const GLOBAL_WIND_DECAY = 2.4;
-const GESTURE_WIND_MULTIPLIER = 20;
+const GESTURE_WIND_MULTIPLIER = 10;
 const MAX_GESTURE_WIND = 360;
 const GESTURE_WAVE_TO_WIND = 0.2;
 const MAX_GESTURE_WIND_DELTA = 80;
@@ -696,7 +696,7 @@ export default function Home() {
         const dx = centerA.x - centerB.x;
         const dz = centerA.z - centerB.z;
         const distanceXZ = Math.sqrt(dx * dx + dz * dz);
-        const allowed = stroke.baseRadius * 1.8 + other.baseRadius * 1.8;
+        const allowed = stroke.baseRadius * 2.2 + other.baseRadius * 2.2;
         if (distanceXZ < allowed) {
           targetBottom = Math.max(targetBottom, other.maxY + stroke.baseRadius * 1.05);
           if (distanceXZ > 0.001) {
