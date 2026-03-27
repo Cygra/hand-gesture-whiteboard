@@ -62,10 +62,10 @@ const END_CAP_WIDTH_SEGMENTS = 20;
 const END_CAP_HEIGHT_SEGMENTS = 16;
 const RANDOM_COLLISION_VELOCITY = 6;
 const GLOBAL_WIND_DECAY = 2.4;
-const MAX_GESTURE_WIND = 200;
-const GESTURE_WAVE_TO_WIND = 0.11;
-const MAX_GESTURE_WIND_DELTA = 40;
-const OPEN_PALM_POSE_BIAS = 6;
+const MAX_GESTURE_WIND = 360;
+const GESTURE_WAVE_TO_WIND = 0.2;
+const MAX_GESTURE_WIND_DELTA = 80;
+const OPEN_PALM_POSE_BIAS = 10;
 const EXTERNAL_WAKE_SPEED = 26;
 const COLLISION_WAKE_SCALE = 0.45;
 const COLLISION_RECIPROCAL_SCALE = 0.5;
@@ -80,7 +80,7 @@ const THEME_TOGGLE_GESTURES = ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"];
 const GESTURE_HOLD_CONFIRM_MS = 3000;
 const GESTURE_HOLD_JITTER_GRACE_MS = 180;
 const FEATURE_HINT_TEXT =
-  "👌 draw balloons | 🖐️ open palm wave for wind | ✊ hold 3s to clear | ✌️/👍 hold 3s to toggle theme.";
+  "👌 捏合绘制气球 / pinch to draw balloons | 🖐️ 张开手掌挥动造风 / open palm wave for wind | ✊ 持续 3 秒清空气球 / hold 3s to clear | ✌️/👍 持续 3 秒切换主题 / hold 3s to toggle theme.";
 const HOLD_CLEAR_LABEL = "✊ 持续握拳 3 秒清空气球 / Hold fist 3s to clear";
 const HOLD_THEME_LABEL = "✌️/👍 持续 3 秒切换主题 / Hold Victory or Thumbs Up 3s to toggle theme";
 const JITTER_GRACE_SECONDS_TEXT = (GESTURE_HOLD_JITTER_GRACE_MS / 1000).toFixed(2);
@@ -206,12 +206,14 @@ export default function Home() {
     startedAt: number;
     pendingLostAt: number | null;
     lastShownSecond: number;
+    rearmBlockedAction: HoldActionType | null;
   }>({
     action: null,
     token: 0,
     startedAt: 0,
     pendingLostAt: null,
     lastShownSecond: 0,
+    rearmBlockedAction: null,
   });
 
   const randomBalloonColor = () => {
@@ -508,6 +510,13 @@ export default function Home() {
   ) => {
     const hold = holdStateRef.current;
 
+    if (hold.rearmBlockedAction === action) {
+      if (!isDetected) {
+        hold.rearmBlockedAction = null;
+      }
+      return;
+    }
+
     if (hold.action === action) {
       if (isDetected) {
         hold.pendingLostAt = null;
@@ -526,6 +535,7 @@ export default function Home() {
       }
 
       if (elapsed >= GESTURE_HOLD_CONFIRM_MS) {
+        hold.rearmBlockedAction = action;
         clearHoldCountdown();
         onConfirm();
       }
@@ -994,6 +1004,7 @@ export default function Home() {
         releaseActiveStroke();
         waveGestureStateRef.current.active = false;
         clearHoldCountdown();
+        holdStateRef.current.rearmBlockedAction = null;
         requestAnimationFrame(renderLoop);
         return;
       }
@@ -1194,7 +1205,7 @@ export default function Home() {
         <br />
         {FEATURE_HINT_TEXT}
         <br />
-        {`If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`}
+        {`手势短暂抖动时，只要未持续变化超过约 ${JITTER_GRACE_SECONDS_TEXT} 秒，倒计时会继续 / If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`}
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
