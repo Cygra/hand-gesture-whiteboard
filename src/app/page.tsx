@@ -1283,9 +1283,11 @@ export default function Home() {
     three.floor.material.color.set(palette.floor);
     const tankMaterial = three.tank.material;
     if (Array.isArray(tankMaterial)) {
-      tankMaterial.forEach((material) => material.color.set(palette.tank));
-    } else {
-      tankMaterial.color.set(palette.tank);
+      tankMaterial.forEach((material) => {
+        if ('color' in material) (material as THREE.MeshStandardMaterial).color.set(palette.tank);
+      });
+    } else if ('color' in tankMaterial) {
+      (tankMaterial as THREE.MeshStandardMaterial).color.set(palette.tank);
     }
     three.driftParticles.material.color.set(palette.particle);
   }, [themeMode]);
