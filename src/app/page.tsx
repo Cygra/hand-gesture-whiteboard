@@ -31,6 +31,7 @@ const MAX_FALL_SPEED = 180;
 const SWAY_FREQUENCY = 1.3;
 const SWAY_STRENGTH = 24;
 const LATERAL_DAMPING = 3.2;
+const SETTLED_LATERAL_DAMPING = 5.2;
 const GROUND_RESTITUTION = 0.28;
 const QUICK_BOUNCE_DAMPING = 0.45;
 const COLLISION_PUSH_FORCE = 26;
@@ -56,10 +57,50 @@ const WALL_PADDING_XY = 10;
 const WALL_PADDING_Z = 25;
 const WAVE_PERIOD = 220;
 const WAVE_DEPTH_RATIO = 0.22;
+// Slightly larger spacing keeps settled balloons visually separated instead of intersecting.
+const COLLISION_SPACING_MULTIPLIER = 2.2;
 const END_CAP_PROTRUSION = 1.12;
 const END_CAP_WIDTH_SEGMENTS = 20;
 const END_CAP_HEIGHT_SEGMENTS = 16;
 const RANDOM_COLLISION_VELOCITY = 6;
+const GLOBAL_WIND_DECAY = 2.4;
+const GESTURE_WIND_MULTIPLIER = 10;
+const MAX_GESTURE_WIND = 360;
+const GESTURE_WAVE_TO_WIND = 0.2;
+const MAX_GESTURE_WIND_DELTA = 80;
+const OPEN_PALM_POSE_BIAS = 10;
+const SCALED_MAX_GESTURE_WIND = MAX_GESTURE_WIND * GESTURE_WIND_MULTIPLIER;
+const SCALED_MAX_GESTURE_WIND_DELTA = MAX_GESTURE_WIND_DELTA * GESTURE_WIND_MULTIPLIER;
+const SCALED_GESTURE_WAVE_TO_WIND = GESTURE_WAVE_TO_WIND * GESTURE_WIND_MULTIPLIER;
+const SCALED_OPEN_PALM_POSE_BIAS = OPEN_PALM_POSE_BIAS * GESTURE_WIND_MULTIPLIER;
+const SCALED_MAX_GESTURE_VERTICAL_WIND = SCALED_MAX_GESTURE_WIND * 0.35;
+const SCALED_MAX_GESTURE_VERTICAL_WIND_DELTA = SCALED_MAX_GESTURE_WIND_DELTA * 0.35;
+const SCALED_OPEN_PALM_POSE_BIAS_Y = SCALED_OPEN_PALM_POSE_BIAS * 0.35;
+const SCALED_MAX_GESTURE_DEPTH_WIND = SCALED_MAX_GESTURE_WIND * 0.3;
+const SCALED_MAX_GESTURE_DEPTH_WIND_DELTA = SCALED_MAX_GESTURE_WIND_DELTA * 0.3;
+const SCALED_OPEN_PALM_POSE_BIAS_Z = SCALED_OPEN_PALM_POSE_BIAS * 0.3;
+const GESTURE_WIND_BLEND_RATE = 7;
+const EXTERNAL_WAKE_SPEED = 26;
+const COLLISION_WAKE_SCALE = 0.45;
+const COLLISION_RECIPROCAL_SCALE = 0.5;
+const WALL_RESTITUTION = 0.28;
+// A settled balloon should wake up from weaker collision impulse than direct wind wake.
+const COLLISION_WAKE_THRESHOLD = EXTERNAL_WAKE_SPEED * COLLISION_WAKE_SCALE;
+const SETTLE_CONFIRM_FRAMES = 12;
+const ENDPOINT_SETTLE_MULTIPLIER = 1.6;
+const ENDPOINT_CONTACT_SETTLE_THRESHOLD = CONTACT_THRESHOLD_Y * ENDPOINT_SETTLE_MULTIPLIER;
+const OPEN_PALM_GESTURES = ["Open_Palm", "OpenPalm"];
+const FIST_GESTURES = ["Closed_Fist", "Fist"];
+const THEME_TOGGLE_GESTURES = ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"];
+const GESTURE_HOLD_CONFIRM_MS = 3000;
+const GESTURE_HOLD_JITTER_GRACE_MS = 180;
+const FEATURE_HINT_TEXT =
+  "👌 捏合绘制气球 / pinch to draw balloons | 🖐️ 张开手掌挥动造风 / open palm wave for wind | ✊ 持续 3 秒清空气球 / hold 3s to clear | ✌️/👍 持续 3 秒切换主题 / hold 3s to toggle theme.";
+const HOLD_CLEAR_LABEL = "✊ 持续握拳 3 秒清空气球 / Hold fist 3s to clear";
+const HOLD_THEME_LABEL = "✌️/👍 持续 3 秒切换主题 / Hold Victory or Thumbs Up 3s to toggle theme";
+const JITTER_GRACE_SECONDS_TEXT = (GESTURE_HOLD_JITTER_GRACE_MS / 1000).toFixed(2);
+
+type HoldActionType = "clear" | "theme";
 
 type BalloonStroke = {
   id: number;
@@ -83,10 +124,56 @@ type BalloonStroke = {
   contactPivot: THREE.Vector3;
   landed: boolean;
   toppling: boolean;
+  settleFrames: number;
+};
+
+type ThemeMode = "light" | "dark";
+
+const THEME_PALETTES: Record<
+  ThemeMode,
+  {
+    appBg: string;
+    text: string;
+    sceneBackground: string;
+    fog: string;
+    floor: string;
+    tank: string;
+    particle: string;
+    modalBg: string;
+    modalText: string;
+  }
+> = {
+  light: {
+    appBg: "#f4fbff",
+    text: "#16334d",
+    sceneBackground: "#edf7ff",
+    fog: "#f5fbff",
+    floor: "#d9ebfb",
+    tank: "#6ba7d8",
+    particle: "#8bb8db",
+    modalBg: "#f8fcff",
+    modalText: "#17324a",
+  },
+  dark: {
+    appBg: "#0a1016",
+    text: "#d7e8f9",
+    sceneBackground: "#0c141f",
+    fog: "#122031",
+    floor: "#1b2a3c",
+    tank: "#5f8cb7",
+    particle: "#7ea3c5",
+    modalBg: "#101b28",
+    modalText: "#d3e6fb",
+  },
 };
 
 export default function Home() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [holdCountdown, setHoldCountdown] = useState<{
+    action: HoldActionType;
+    seconds: number;
+  } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousDrawPointRef = useRef({ x: 0, y: 0 });
@@ -112,6 +199,8 @@ export default function Home() {
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
     tank: THREE.LineSegments;
+    floor: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+    driftParticles: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
     animationFrame: number;
     leftWall: number;
     rightWall: number;
@@ -120,6 +209,36 @@ export default function Home() {
     backWall: number;
     frontWall: number;
   } | null>(null);
+  const waveGestureStateRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+    lastZ: number;
+    lastTime: number;
+  }>({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+    lastZ: 0,
+    lastTime: 0,
+  });
+  const windStateRef = useRef({ x: 0, y: 0, z: 0 });
+  const windTargetRef = useRef({ x: 0, y: 0, z: 0 });
+  const holdStateRef = useRef<{
+    action: HoldActionType | null;
+    token: number;
+    startedAt: number;
+    pendingLostAt: number | null;
+    lastShownSecond: number;
+    rearmBlockedAction: HoldActionType | null;
+  }>({
+    action: null,
+    token: 0,
+    startedAt: 0,
+    pendingLostAt: null,
+    lastShownSecond: 0,
+    rearmBlockedAction: null,
+  });
 
   const randomBalloonColor = () => {
     const hue = Math.random();
@@ -229,7 +348,7 @@ export default function Home() {
     stroke.maxY = maxY + radius * END_CAP_PROTRUSION;
   };
 
-  const clampInsideTank = (point: THREE.Vector3) => {
+  const clampInsideTank = (point: THREE.Vector3, clampY = true) => {
     const three = threeRef.current;
     if (!three) return;
 
@@ -237,10 +356,12 @@ export default function Home() {
       three.rightWall - WALL_PADDING_XY,
       Math.max(three.leftWall + WALL_PADDING_XY, point.x)
     );
-    point.y = Math.min(
-      three.topWall - WALL_PADDING_XY,
-      Math.max(three.bottomWall + WALL_PADDING_XY, point.y)
-    );
+    if (clampY) {
+      point.y = Math.min(
+        three.topWall - WALL_PADDING_XY,
+        Math.max(three.bottomWall + WALL_PADDING_XY, point.y)
+      );
+    }
     point.z = Math.min(
       three.frontWall - WALL_PADDING_Z,
       Math.max(three.backWall + WALL_PADDING_Z, point.z)
@@ -328,6 +449,7 @@ export default function Home() {
         contactPivot: new THREE.Vector3(point.x, point.y, point.z),
         landed: false,
         toppling: false,
+        settleFrames: 0,
       };
 
       state.activeStroke = stroke;
@@ -374,12 +496,91 @@ export default function Home() {
       stroke.landed = false;
       stroke.toppling = false;
       stroke.angularVelocity = 0;
-      rebuildBalloonGeometry(stroke, 1.05);
+      rebuildBalloonGeometry(stroke, 1);
     }
 
     state.activeStroke = null;
     previousDrawPointRef.current.x = 0;
     previousDrawPointRef.current.y = 0;
+  };
+
+  const clearAllStrokes = () => {
+    const state = balloonStateRef.current;
+    releaseActiveStroke();
+    state.strokes.forEach((stroke) => {
+      threeRef.current?.scene.remove(stroke.mesh);
+      threeRef.current?.scene.remove(stroke.startCap);
+      threeRef.current?.scene.remove(stroke.endCap);
+      stroke.mesh.geometry.dispose();
+      stroke.startCap.geometry.dispose();
+      stroke.endCap.geometry.dispose();
+      stroke.mesh.material.dispose();
+    });
+    state.strokes = [];
+  };
+
+  const clearHoldCountdown = () => {
+    holdStateRef.current.action = null;
+    holdStateRef.current.pendingLostAt = null;
+    holdStateRef.current.lastShownSecond = 0;
+    setHoldCountdown(null);
+  };
+
+  const updateHoldGesture = (
+    action: HoldActionType,
+    isDetected: boolean,
+    nowMs: number,
+    onConfirm: () => void
+  ) => {
+    const hold = holdStateRef.current;
+
+    if (hold.rearmBlockedAction === action) {
+      if (!isDetected) {
+        hold.rearmBlockedAction = null;
+      }
+      return;
+    }
+
+    if (hold.action === action) {
+      if (isDetected) {
+        hold.pendingLostAt = null;
+      } else if (!hold.pendingLostAt) {
+        hold.pendingLostAt = nowMs;
+      } else if (nowMs - hold.pendingLostAt > GESTURE_HOLD_JITTER_GRACE_MS) {
+        clearHoldCountdown();
+        return;
+      }
+
+      const elapsed = nowMs - hold.startedAt;
+      const remainSeconds = Math.max(1, Math.ceil((GESTURE_HOLD_CONFIRM_MS - elapsed) / 1000));
+      if (hold.lastShownSecond !== remainSeconds) {
+        hold.lastShownSecond = remainSeconds;
+        setHoldCountdown({ action, seconds: remainSeconds });
+      }
+
+      if (elapsed >= GESTURE_HOLD_CONFIRM_MS) {
+        hold.rearmBlockedAction = action;
+        clearHoldCountdown();
+        onConfirm();
+      }
+      return;
+    }
+
+    if (!isDetected) {
+      return;
+    }
+
+    clearHoldCountdown();
+    hold.action = action;
+    hold.token += 1;
+    hold.startedAt = nowMs;
+    hold.pendingLostAt = null;
+    hold.lastShownSecond = 3;
+    setHoldCountdown({ action, seconds: 3 });
+  };
+
+  const toggleThemeMode = () => {
+    setThemeMode((previous) => (previous === "light" ? "dark" : "light"));
   };
 
   const drawLandmarks = (
@@ -407,28 +608,56 @@ export default function Home() {
 
     const state = balloonStateRef.current;
     const settled = state.strokes.filter((stroke) => stroke.settled);
+    windTargetRef.current.x -= windTargetRef.current.x * GLOBAL_WIND_DECAY * deltaSeconds;
+    windTargetRef.current.y -= windTargetRef.current.y * GLOBAL_WIND_DECAY * deltaSeconds;
+    windTargetRef.current.z -= windTargetRef.current.z * GLOBAL_WIND_DECAY * deltaSeconds;
+    const windBlend = Math.min(1, GESTURE_WIND_BLEND_RATE * deltaSeconds);
+    windStateRef.current.x += (windTargetRef.current.x - windStateRef.current.x) * windBlend;
+    windStateRef.current.y += (windTargetRef.current.y - windStateRef.current.y) * windBlend;
+    windStateRef.current.z += (windTargetRef.current.z - windStateRef.current.z) * windBlend;
 
     state.strokes.forEach((stroke) => {
-      if (stroke === state.activeStroke || stroke.settled || stroke.points.length < 2) {
+      if (stroke === state.activeStroke || stroke.points.length < 2) {
         return;
       }
 
-      stroke.velocityY -= GRAVITY * deltaSeconds;
-      stroke.velocityY -= stroke.velocityY * AIR_DRAG * deltaSeconds;
-      if (stroke.velocityY < -MAX_FALL_SPEED) {
-        stroke.velocityY = -MAX_FALL_SPEED;
+      if (stroke.settled) {
+        const windSpeed = Math.hypot(
+          windStateRef.current.x,
+          windStateRef.current.y,
+          windStateRef.current.z
+        );
+        const collisionSpeed = Math.hypot(stroke.velocityX, stroke.velocityZ);
+        if (windSpeed + collisionSpeed > EXTERNAL_WAKE_SPEED) {
+          stroke.settled = false;
+          stroke.settleFrames = 0;
+        }
       }
 
-      const swayTime = performance.now() * 0.001 * SWAY_FREQUENCY + stroke.swayPhase;
-      stroke.velocityX +=
-        Math.sin(swayTime) * stroke.swayStrength * deltaSeconds;
-      stroke.velocityZ +=
-        Math.cos(swayTime * 0.9 + stroke.swayPhase) * stroke.swayStrength * 0.65 * deltaSeconds;
+      if (!stroke.settled) {
+        stroke.velocityY -= GRAVITY * deltaSeconds;
+        stroke.velocityY -= stroke.velocityY * AIR_DRAG * deltaSeconds;
+        if (stroke.velocityY < -MAX_FALL_SPEED) {
+          stroke.velocityY = -MAX_FALL_SPEED;
+        }
+      }
 
-      stroke.velocityX -= stroke.velocityX * LATERAL_DAMPING * deltaSeconds;
-      stroke.velocityZ -= stroke.velocityZ * LATERAL_DAMPING * deltaSeconds;
+      if (!stroke.settled) {
+        const swayTime = performance.now() * 0.001 * SWAY_FREQUENCY + stroke.swayPhase;
+        stroke.velocityX += Math.sin(swayTime) * stroke.swayStrength * deltaSeconds;
+        stroke.velocityZ +=
+          Math.cos(swayTime * 0.9 + stroke.swayPhase) * stroke.swayStrength * 0.65 * deltaSeconds;
+      }
 
-      const offsetY = stroke.velocityY * deltaSeconds;
+      stroke.velocityX += windStateRef.current.x * deltaSeconds;
+      stroke.velocityY += windStateRef.current.y * deltaSeconds;
+      stroke.velocityZ += windStateRef.current.z * deltaSeconds;
+
+      const lateralDamping = stroke.settled ? SETTLED_LATERAL_DAMPING : LATERAL_DAMPING;
+      stroke.velocityX -= stroke.velocityX * lateralDamping * deltaSeconds;
+      stroke.velocityZ -= stroke.velocityZ * lateralDamping * deltaSeconds;
+
+      const offsetY = stroke.settled ? 0 : stroke.velocityY * deltaSeconds;
       const offsetX = stroke.velocityX * deltaSeconds;
       const offsetZ = stroke.velocityZ * deltaSeconds;
 
@@ -436,8 +665,28 @@ export default function Home() {
         point.x += offsetX;
         point.y += offsetY;
         point.z += offsetZ;
-        clampInsideTank(point);
+        clampInsideTank(point, false);
       });
+
+      const tank = threeRef.current;
+      if (tank) {
+        const leftLimit = tank.leftWall + WALL_PADDING_XY;
+        const rightLimit = tank.rightWall - WALL_PADDING_XY;
+        const topLimit = tank.topWall - WALL_PADDING_XY;
+        const hitLeftWall = stroke.points.some((point) => point.x <= leftLimit + 0.001);
+        const hitRightWall = stroke.points.some((point) => point.x >= rightLimit - 0.001);
+        const hitTopWall = stroke.points.some((point) => point.y >= topLimit - 0.001);
+
+        if (hitLeftWall && stroke.velocityX < 0) {
+          stroke.velocityX = -stroke.velocityX * WALL_RESTITUTION;
+        } else if (hitRightWall && stroke.velocityX > 0) {
+          stroke.velocityX = -stroke.velocityX * WALL_RESTITUTION;
+        }
+
+        if (hitTopWall && stroke.velocityY > 0) {
+          stroke.velocityY = -stroke.velocityY * WALL_RESTITUTION;
+        }
+      }
 
       let targetBottom = three.bottomWall + stroke.baseRadius;
 
@@ -449,16 +698,34 @@ export default function Home() {
         const dx = centerA.x - centerB.x;
         const dz = centerA.z - centerB.z;
         const distanceXZ = Math.sqrt(dx * dx + dz * dz);
-        const allowed = stroke.baseRadius * 1.8 + other.baseRadius * 1.8;
+        const allowed =
+          stroke.baseRadius * COLLISION_SPACING_MULTIPLIER +
+          other.baseRadius * COLLISION_SPACING_MULTIPLIER;
         if (distanceXZ < allowed) {
           targetBottom = Math.max(targetBottom, other.maxY + stroke.baseRadius * 1.05);
           if (distanceXZ > 0.001) {
             const push = ((allowed - distanceXZ) / allowed) * COLLISION_PUSH_FORCE;
             stroke.velocityX += (dx / distanceXZ) * push * deltaSeconds;
             stroke.velocityZ += (dz / distanceXZ) * push * deltaSeconds;
+            other.velocityX -=
+              (dx / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
+            other.velocityZ -=
+              (dz / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
           } else {
             stroke.velocityX += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
             stroke.velocityZ += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
+            other.velocityX +=
+              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
+            other.velocityZ +=
+              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
+          }
+
+          if (other.settled) {
+            const otherPushSpeed = Math.hypot(other.velocityX, other.velocityZ);
+            if (otherPushSpeed > COLLISION_WAKE_THRESHOLD) {
+              other.settled = false;
+              other.settleFrames = 0;
+            }
           }
         }
       });
@@ -527,17 +794,38 @@ export default function Home() {
         const lateralSpeed = Math.sqrt(
           stroke.velocityX * stroke.velocityX + stroke.velocityZ * stroke.velocityZ
         );
+        const startPoint = stroke.points[0];
+        const endPoint = stroke.points[stroke.points.length - 1];
+        const endpointsStable =
+          Math.abs(startPoint.y - targetBottom) < ENDPOINT_CONTACT_SETTLE_THRESHOLD &&
+          Math.abs(endPoint.y - targetBottom) < ENDPOINT_CONTACT_SETTLE_THRESHOLD;
+        const multiContactCount = stroke.points.filter(
+          (point) => point.y <= targetBottom + MULTI_CONTACT_THRESHOLD
+        ).length;
+        const hasMultiContact = multiContactCount > 1;
+
         if (
           Math.abs(stroke.velocityY) < SETTLEMENT_VELOCITY_Y &&
           lateralSpeed < SETTLEMENT_LATERAL_SPEED &&
           !stroke.toppling &&
-          stroke.bounce < SETTLEMENT_BOUNCE_THRESHOLD
+          stroke.bounce < SETTLEMENT_BOUNCE_THRESHOLD &&
+          endpointsStable &&
+          hasMultiContact
         ) {
+          stroke.settleFrames += 1;
+        } else {
+          stroke.settleFrames = 0;
+        }
+
+        if (stroke.settleFrames >= SETTLE_CONFIRM_FRAMES) {
           stroke.velocityY = 0;
           stroke.velocityX = 0;
           stroke.velocityZ = 0;
           alignMultiContactPoints(stroke.points, targetBottom);
           stroke.settled = true;
+          stroke.settleFrames = 0;
+        } else if (stroke.settled) {
+          alignMultiContactPoints(stroke.points, targetBottom);
         }
         rebuildBalloonGeometry(stroke, 1);
       } else {
@@ -553,9 +841,10 @@ export default function Home() {
     const container = threeContainerRef.current;
     if (!container) return;
 
+    const palette = THEME_PALETTES[themeMode];
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#edf7ff");
-    scene.fog = new THREE.Fog("#f5fbff", 300, 2300);
+    scene.background = new THREE.Color(palette.sceneBackground);
+    scene.fog = new THREE.Fog(palette.fog, 300, 2300);
 
     const camera = new THREE.PerspectiveCamera(
       52,
@@ -586,7 +875,7 @@ export default function Home() {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(window.innerWidth * 1.05, window.innerWidth * 1.05),
-      new THREE.MeshStandardMaterial({ color: "#d9ebfb", roughness: 0.92, metalness: 0.08 })
+      new THREE.MeshStandardMaterial({ color: palette.floor, roughness: 0.92, metalness: 0.08 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -window.innerHeight / 2;
@@ -604,14 +893,14 @@ export default function Home() {
     const edges = new THREE.EdgesGeometry(boxGeometry);
     const tank = new THREE.LineSegments(
       edges,
-      new THREE.LineBasicMaterial({ color: "#6ba7d8", transparent: true, opacity: 0.42 })
+      new THREE.LineBasicMaterial({ color: palette.tank, transparent: true, opacity: 0.42 })
     );
     scene.add(tank);
 
     const driftParticles = new THREE.Points(
       new THREE.BufferGeometry(),
       new THREE.PointsMaterial({
-        color: "#8bb8db",
+        color: palette.particle,
         size: 2,
         transparent: true,
         opacity: 0.5,
@@ -635,6 +924,8 @@ export default function Home() {
       camera,
       renderer,
       tank,
+      floor,
+      driftParticles,
       animationFrame: 0,
       leftWall: -window.innerWidth / 2,
       rightWall: window.innerWidth / 2,
@@ -701,7 +992,11 @@ export default function Home() {
       const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(width, height, depth));
       const tank = new THREE.LineSegments(
         edges,
-        new THREE.LineBasicMaterial({ color: "#6ba7d8", transparent: true, opacity: 0.42 })
+        new THREE.LineBasicMaterial({
+          color: THEME_PALETTES[themeMode].tank,
+          transparent: true,
+          opacity: 0.42,
+        })
       );
       activeThree.scene.add(tank);
       activeThree.tank = tank;
@@ -763,20 +1058,41 @@ export default function Home() {
       if (!result.landmarks || result.landmarks.length === 0) {
         landmarkCanvasCtx.clearRect(0, 0, width, height);
         releaseActiveStroke();
+        waveGestureStateRef.current.active = false;
+        clearHoldCountdown();
+        holdStateRef.current.rearmBlockedAction = null;
         requestAnimationFrame(renderLoop);
         return;
       }
 
       let isConnected = false;
-      result.landmarks.forEach((landmarks) => {
+      let openPalmDetected = false;
+      let fistDetected = false;
+      let themeGestureDetected = false;
+
+      result.landmarks.forEach((landmarks, handIndex) => {
+        const handGestures = result.gestures?.[handIndex] ?? [];
+        const categories = handGestures.map((gesture) => gesture.categoryName);
+        const hasOpenPalm = categories.some((category) => OPEN_PALM_GESTURES.includes(category));
+        const hasFist = categories.some((category) => FIST_GESTURES.includes(category));
+        const hasThemeToggleGesture = categories.some((category) =>
+          THEME_TOGGLE_GESTURES.includes(category)
+        );
+
+        openPalmDetected = openPalmDetected || hasOpenPalm;
+        fistDetected = fistDetected || hasFist;
+        themeGestureDetected = themeGestureDetected || hasThemeToggleGesture;
+
         const thumbTip = landmarks[THUMB_TIP_INDEX];
         const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
 
         const dx = Math.abs((thumbTip.x - indexFingerTip.x) * width);
         const dy = Math.abs((thumbTip.y - indexFingerTip.y) * height);
-        isConnected = dx < 50 && dy < 50;
+        const pinchConnected = dx < 50 && dy < 50;
+        const canDrawFromPinch = pinchConnected && !hasFist;
+        isConnected = isConnected || canDrawFromPinch;
 
-        if (isConnected) {
+        if (canDrawFromPinch) {
           const x = (1 - indexFingerTip.x) * width;
           const y = indexFingerTip.y * height;
 
@@ -796,7 +1112,108 @@ export default function Home() {
           previousDrawPointRef.current.y = smoothedY;
         }
 
-        drawLandmarks(landmarks, landmarkCanvasCtx, width, height, isConnected);
+        drawLandmarks(landmarks, landmarkCanvasCtx, width, height, canDrawFromPinch);
+      });
+
+      if (openPalmDetected) {
+        const hand = result.landmarks[0];
+        const wrist = hand?.[0];
+        if (wrist) {
+          // Mirror x to match the camera-flipped canvas so waving direction aligns with user perspective.
+          const wristX = (1 - wrist.x) * width;
+          const wristY = wrist.y * height;
+          const wristZ = wrist.z;
+          const now = performance.now();
+          const waveState = waveGestureStateRef.current;
+          if (!waveState.active) {
+            waveState.active = true;
+            waveState.lastX = wristX;
+            waveState.lastY = wristY;
+            waveState.lastZ = wristZ;
+            waveState.lastTime = now;
+          } else {
+            const deltaX = wristX - waveState.lastX;
+            const deltaY = wristY - waveState.lastY;
+            const deltaZ = wristZ - waveState.lastZ;
+            const deltaTime = (now - waveState.lastTime) / 1000;
+            if (deltaTime > 0) {
+              const speedX = deltaX / deltaTime;
+              const speedY = deltaY / deltaTime;
+              const speedZ = deltaZ / deltaTime;
+              const windDeltaX =
+                Math.sign(speedX) *
+                Math.min(
+                  SCALED_MAX_GESTURE_WIND_DELTA,
+                  Math.abs(speedX) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              const windDeltaY =
+                -Math.sign(speedY) *
+                Math.min(
+                  SCALED_MAX_GESTURE_VERTICAL_WIND_DELTA,
+                  Math.abs(speedY) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              const windDeltaZ =
+                -Math.sign(speedZ) *
+                Math.min(
+                  SCALED_MAX_GESTURE_DEPTH_WIND_DELTA,
+                  Math.abs(speedZ) * SCALED_GESTURE_WAVE_TO_WIND
+                );
+              windTargetRef.current.x = Math.max(
+                -SCALED_MAX_GESTURE_WIND,
+                Math.min(SCALED_MAX_GESTURE_WIND, windTargetRef.current.x + windDeltaX)
+              );
+              windTargetRef.current.y = Math.max(
+                -SCALED_MAX_GESTURE_VERTICAL_WIND,
+                Math.min(
+                  SCALED_MAX_GESTURE_VERTICAL_WIND,
+                  windTargetRef.current.y + windDeltaY
+                )
+              );
+              windTargetRef.current.z = Math.max(
+                -SCALED_MAX_GESTURE_DEPTH_WIND,
+                Math.min(SCALED_MAX_GESTURE_DEPTH_WIND, windTargetRef.current.z + windDeltaZ)
+              );
+            }
+            waveState.lastX = wristX;
+            waveState.lastY = wristY;
+            waveState.lastZ = wristZ;
+            waveState.lastTime = now;
+          }
+
+          windTargetRef.current.x = Math.max(
+            -SCALED_MAX_GESTURE_WIND,
+            Math.min(
+              SCALED_MAX_GESTURE_WIND,
+              windTargetRef.current.x +
+                ((wristX - width / 2) / width) * SCALED_OPEN_PALM_POSE_BIAS
+            )
+          );
+          windTargetRef.current.y = Math.max(
+            -SCALED_MAX_GESTURE_VERTICAL_WIND,
+            Math.min(
+              SCALED_MAX_GESTURE_VERTICAL_WIND,
+              windTargetRef.current.y +
+                ((height / 2 - wristY) / height) * SCALED_OPEN_PALM_POSE_BIAS_Y
+            )
+          );
+          windTargetRef.current.z = Math.max(
+            -SCALED_MAX_GESTURE_DEPTH_WIND,
+            Math.min(
+              SCALED_MAX_GESTURE_DEPTH_WIND,
+              windTargetRef.current.z - wristZ * SCALED_OPEN_PALM_POSE_BIAS_Z
+            )
+          );
+        }
+      } else {
+        waveGestureStateRef.current.active = false;
+      }
+
+      const nowMs = performance.now();
+      updateHoldGesture("clear", fistDetected, nowMs, () => {
+        clearAllStrokes();
+      });
+      updateHoldGesture("theme", themeGestureDetected, nowMs, () => {
+        toggleThemeMode();
       });
 
       if (!isConnected) {
@@ -842,6 +1259,7 @@ export default function Home() {
 
       const stream = currentVideo?.srcObject as MediaStream | null;
       stream?.getTracks().forEach((track) => track.stop());
+      clearHoldCountdown();
       balloonState.strokes.forEach((stroke) => {
         threeRef.current?.scene.remove(stroke.startCap);
         threeRef.current?.scene.remove(stroke.endCap);
@@ -854,10 +1272,31 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    const three = threeRef.current;
+    if (!three) return;
+
+    const palette = THEME_PALETTES[themeMode];
+    three.scene.background = new THREE.Color(palette.sceneBackground);
+    three.scene.fog = new THREE.Fog(palette.fog, 300, 2300);
+    three.floor.material.color.set(palette.floor);
+    const tankMaterial = three.tank.material;
+    if (Array.isArray(tankMaterial)) {
+      tankMaterial.forEach((material) => material.color.set(palette.tank));
+    } else {
+      tankMaterial.color.set(palette.tank);
+    }
+    three.driftParticles.material.color.set(palette.particle);
+  }, [themeMode]);
+
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   return (
-    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-[#f4fbff] overflow-hidden">
+    <div
+      className="flex flex-col items-center min-h-screen p-8 w-full justify-center overflow-hidden"
+      style={{ backgroundColor: THEME_PALETTES[themeMode].appBg }}
+    >
       <iframe
         src="https://ghbtns.com/github-btn.html?user=Cygra&repo=hand-gesture-whiteboard&type=star&count=true&size=large"
         width="170"
@@ -865,10 +1304,17 @@ export default function Home() {
         title="GitHub"
         className="fixed top-2 left-2 z-50"
       />
-      <div className="fixed top-2 underline text-[#16334d] text-center z-40">
+      <div
+        className="fixed top-2 underline text-center z-40"
+        style={{ color: THEME_PALETTES[themeMode].text }}
+      >
         {"Connect your index finger tip and thumb tip (like 👌) to create 3D balloons."}
         <br />
         {"连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。"}
+        <br />
+        {FEATURE_HINT_TEXT}
+        <br />
+        {`手势短暂抖动时，只要未持续变化超过约 ${JITTER_GRACE_SECONDS_TEXT} 秒，倒计时会继续 / If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`}
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
@@ -891,6 +1337,15 @@ export default function Home() {
       />
 
       <Button
+        onPress={toggleThemeMode}
+        className="fixed top-2 right-28 z-50"
+        color={themeMode === "dark" ? "warning" : "secondary"}
+        variant="shadow"
+      >
+        {themeMode === "dark" ? "Light" : "Dark"}
+      </Button>
+
+      <Button
         onPress={onOpen}
         className="fixed top-2 right-2 z-50"
         color="primary"
@@ -899,8 +1354,33 @@ export default function Home() {
         About
       </Button>
 
+      {holdCountdown !== null && (
+        <div
+          className="fixed inset-0 z-45 flex items-center justify-center pointer-events-none"
+          style={{ color: THEME_PALETTES[themeMode].text }}
+        >
+          <div
+            className="rounded-xl px-6 py-4 text-center font-semibold text-2xl border"
+            style={{
+              backgroundColor: THEME_PALETTES[themeMode].modalBg,
+              borderColor: THEME_PALETTES[themeMode].tank,
+            }}
+          >
+            <div>
+              {holdCountdown.action === "clear" ? HOLD_CLEAR_LABEL : HOLD_THEME_LABEL}
+            </div>
+            <div className="text-4xl mt-1">{holdCountdown.seconds}</div>
+          </div>
+        </div>
+      )}
+
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-        <ModalContent className="bg-[#f8fcff] text-[#17324a]">
+        <ModalContent
+          style={{
+            backgroundColor: THEME_PALETTES[themeMode].modalBg,
+            color: THEME_PALETTES[themeMode].modalText,
+          }}
+        >
           <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
           <ModalBody>
             <p>
