@@ -35,6 +35,7 @@ import {
   EXTERNAL_WAKE_SPEED,
   SETTLE_CONFIRM_FRAMES,
   ENDPOINT_CONTACT_SETTLE_THRESHOLD,
+  FALL_DAMPING,
 } from "../constants";
 import {
   clampInsideTank,
