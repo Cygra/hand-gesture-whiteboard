@@ -69,6 +69,7 @@ const MAX_GESTURE_WIND = 360;
 const GESTURE_WAVE_TO_WIND = 0.2;
 const MAX_GESTURE_WIND_DELTA = 80;
 const OPEN_PALM_POSE_BIAS = 10;
+const PINCH_RELEASE_GRACE_MS = 300;
 const SCALED_MAX_GESTURE_WIND = MAX_GESTURE_WIND * GESTURE_WIND_MULTIPLIER;
 const SCALED_MAX_GESTURE_WIND_DELTA = MAX_GESTURE_WIND_DELTA * GESTURE_WIND_MULTIPLIER;
 const SCALED_GESTURE_WAVE_TO_WIND = GESTURE_WAVE_TO_WIND * GESTURE_WIND_MULTIPLIER;
@@ -82,7 +83,6 @@ const SCALED_OPEN_PALM_POSE_BIAS_Z = SCALED_OPEN_PALM_POSE_BIAS * 0.3;
 const GESTURE_WIND_BLEND_RATE = 7;
 const EXTERNAL_WAKE_SPEED = 26;
 const COLLISION_WAKE_SCALE = 0.45;
-const COLLISION_RECIPROCAL_SCALE = 0.5;
 const WALL_RESTITUTION = 0.28;
 // A settled balloon should wake up from weaker collision impulse than direct wind wake.
 const COLLISION_WAKE_THRESHOLD = EXTERNAL_WAKE_SPEED * COLLISION_WAKE_SCALE;
@@ -94,13 +94,10 @@ const FIST_GESTURES = ["Closed_Fist", "Fist"];
 const THEME_TOGGLE_GESTURES = ["Victory", "Thumb_Up", "Thumbs_Up", "ThumbUp"];
 const GESTURE_HOLD_CONFIRM_MS = 3000;
 const GESTURE_HOLD_JITTER_GRACE_MS = 180;
-const FEATURE_HINT_TEXT =
-  "👌 捏合绘制气球 / pinch to draw balloons | 🖐️ 张开手掌挥动造风 / open palm wave for wind | ✊ 持续 3 秒清空气球 / hold 3s to clear | ✌️/👍 持续 3 秒切换主题 / hold 3s to toggle theme.";
-const HOLD_CLEAR_LABEL = "✊ 持续握拳 3 秒清空气球 / Hold fist 3s to clear";
-const HOLD_THEME_LABEL = "✌️/👍 持续 3 秒切换主题 / Hold Victory or Thumbs Up 3s to toggle theme";
 const JITTER_GRACE_SECONDS_TEXT = (GESTURE_HOLD_JITTER_GRACE_MS / 1000).toFixed(2);
 
 type HoldActionType = "clear" | "theme";
+type Locale = "en" | "zh" | "ja";
 
 type BalloonStroke = {
   id: number;
@@ -170,6 +167,10 @@ const THEME_PALETTES: Record<
 export default function Home() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [enableBalloonFall, setEnableBalloonFall] = useState(true);
+  const [enableGestureWind, setEnableGestureWind] = useState(true);
+  const [locale, setLocale] = useState<Locale>("en");
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [holdCountdown, setHoldCountdown] = useState<{
     action: HoldActionType;
     seconds: number;
@@ -239,6 +240,81 @@ export default function Home() {
     lastShownSecond: 0,
     rearmBlockedAction: null,
   });
+  const pinchReleaseStateRef = useRef<{ lostAt: number | null }>({
+    lostAt: null,
+  });
+  const enableBalloonFallRef = useRef(enableBalloonFall);
+  const enableGestureWindRef = useRef(enableGestureWind);
+
+  const uiText =
+    locale === "zh"
+      ? {
+          drawHint: "连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。",
+          featureHint:
+            "👌 捏合绘制气球 | 🖐️ 张开手掌挥动造风 | ✊ 持续 3 秒清空气球 | ✌️/👍 持续 3 秒切换主题。",
+          jitterHint: `手势短暂抖动时，只要未持续变化超过约 ${JITTER_GRACE_SECONDS_TEXT} 秒，倒计时会继续。`,
+          holdClear: "✊ 持续握拳 3 秒清空气球",
+          holdTheme: "✌️/👍 持续 3 秒切换主题",
+          themeButton: themeMode === "dark" ? "浅色" : "深色",
+          fallOn: "气球下落：开",
+          fallOff: "气球下落：关",
+          windOn: "手势风吹：开",
+          windOff: "手势风吹：关",
+          about: "关于",
+          aboutTitle: "关于",
+          aboutDesc1:
+            "基于 Next.js 和 Mediapipe tasks-vision Gesture Recognizer 实现的手势白板。",
+          aboutDesc2: "通过摄像头实时画面识别手势，在 3D 鱼缸空间里绘制长条气球并自然下落堆积。",
+          otherProjects: "其他 Mediapipe + Next.js 项目：",
+        }
+      : locale === "ja"
+      ? {
+          drawHint: "人差し指と親指の先を合わせて（👌）3D バルーンを描こう。",
+          featureHint:
+            "👌 ピンチで描画 | 🖐️ 手のひらを振って風を起こす | ✊ 3 秒握りこぶしで全消去 | ✌️/👍 3 秒キープでテーマ切替。",
+          jitterHint: `ジェスチャーが一瞬ぶれても、${JITTER_GRACE_SECONDS_TEXT} 秒以内ならカウントダウンは継続されます。`,
+          holdClear: "✊ 握りこぶしを 3 秒キープで全消去",
+          holdTheme: "✌️/👍 3 秒キープでテーマ切替",
+          themeButton: themeMode === "dark" ? "ライト" : "ダーク",
+          fallOn: "落下：オン",
+          fallOff: "落下：オフ",
+          windOn: "風：オン",
+          windOff: "風：オフ",
+          about: "概要",
+          aboutTitle: "概要",
+          aboutDesc1:
+            "Next.js と Mediapipe tasks-vision Gesture Recognizer を使ったジェスチャーホワイトボード。",
+          aboutDesc2:
+            "カメラ映像でジェスチャーを認識し、3D 空間にバルーンストロークを描いて自然に落下・積み上げます。",
+          otherProjects: "その他の Mediapipe + Next.js プロジェクト：",
+        }
+      : {
+          drawHint: "Connect your index finger tip and thumb tip (like 👌) to create 3D balloons.",
+          featureHint:
+            "👌 pinch to draw balloons | 🖐️ open palm wave for wind | ✊ hold 3s to clear | ✌️/👍 hold 3s to toggle theme.",
+          jitterHint: `If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`,
+          holdClear: "✊ Hold fist 3s to clear",
+          holdTheme: "✌️/👍 Hold Victory or Thumbs Up 3s to toggle theme",
+          themeButton: themeMode === "dark" ? "Light" : "Dark",
+          fallOn: "Balloon Fall: ON",
+          fallOff: "Balloon Fall: OFF",
+          windOn: "Gesture Wind: ON",
+          windOff: "Gesture Wind: OFF",
+          about: "About",
+          aboutTitle: "About",
+          aboutDesc1:
+            "A gesture whiteboard based on Next.js and Mediapipe tasks-vision Gesture Recognizer.",
+          aboutDesc2:
+            "Recognize gestures through real-time camera images and draw long 3D balloon strokes that naturally fall and stack.",
+          otherProjects: "Other Mediapipe + Next.js projects:",
+        };
+
+  const LANG_OPTIONS: { value: Locale; label: string }[] = [
+    { value: "en", label: "English" },
+    { value: "zh", label: "中文" },
+    { value: "ja", label: "日本語" },
+  ];
+  const currentLangLabel = LANG_OPTIONS.find((o) => o.value === locale)?.label ?? "EN";
 
   const randomBalloonColor = () => {
     const hue = Math.random();
@@ -500,6 +576,7 @@ export default function Home() {
     }
 
     state.activeStroke = null;
+    pinchReleaseStateRef.current.lostAt = null;
     previousDrawPointRef.current.x = 0;
     previousDrawPointRef.current.y = 0;
   };
@@ -607,7 +684,76 @@ export default function Home() {
     if (!three) return;
 
     const state = balloonStateRef.current;
+    if (!enableBalloonFallRef.current) {
+      state.strokes.forEach((stroke) => {
+        if (stroke === state.activeStroke || stroke.points.length < 2) return;
+        stroke.velocityX = 0;
+        stroke.velocityY = 0;
+        stroke.velocityZ = 0;
+        stroke.angularVelocity = 0;
+        stroke.toppling = false;
+        stroke.settleFrames = 0;
+        rebuildBalloonGeometry(stroke, 1);
+      });
+      return;
+    }
+
     const settled = state.strokes.filter((stroke) => stroke.settled);
+
+    for (let i = 0; i < state.strokes.length; i++) {
+      const strokeA = state.strokes[i];
+      if (strokeA === state.activeStroke || strokeA.points.length < 2) continue;
+      const centerA = strokeA.points[Math.floor(strokeA.points.length / 2)];
+      if (!centerA) continue;
+
+      for (let j = i + 1; j < state.strokes.length; j++) {
+        const strokeB = state.strokes[j];
+        if (strokeB === state.activeStroke || strokeB.points.length < 2) continue;
+        const centerB = strokeB.points[Math.floor(strokeB.points.length / 2)];
+        if (!centerB) continue;
+
+        const dx = centerA.x - centerB.x;
+        const dz = centerA.z - centerB.z;
+        const distanceXZ = Math.sqrt(dx * dx + dz * dz);
+        const allowed =
+          strokeA.baseRadius * COLLISION_SPACING_MULTIPLIER +
+          strokeB.baseRadius * COLLISION_SPACING_MULTIPLIER;
+        if (distanceXZ >= allowed) continue;
+
+        if (distanceXZ > 0.001) {
+          const push = ((allowed - distanceXZ) / allowed) * COLLISION_PUSH_FORCE;
+          const pushX = (dx / distanceXZ) * push * deltaSeconds;
+          const pushZ = (dz / distanceXZ) * push * deltaSeconds;
+          strokeA.velocityX += pushX;
+          strokeA.velocityZ += pushZ;
+          strokeB.velocityX -= pushX;
+          strokeB.velocityZ -= pushZ;
+        } else {
+          const randomX = (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
+          const randomZ = (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
+          strokeA.velocityX += randomX;
+          strokeA.velocityZ += randomZ;
+          strokeB.velocityX -= randomX;
+          strokeB.velocityZ -= randomZ;
+        }
+
+        if (strokeA.settled) {
+          const pushSpeedA = Math.hypot(strokeA.velocityX, strokeA.velocityZ);
+          if (pushSpeedA > COLLISION_WAKE_THRESHOLD) {
+            strokeA.settled = false;
+            strokeA.settleFrames = 0;
+          }
+        }
+        if (strokeB.settled) {
+          const pushSpeedB = Math.hypot(strokeB.velocityX, strokeB.velocityZ);
+          if (pushSpeedB > COLLISION_WAKE_THRESHOLD) {
+            strokeB.settled = false;
+            strokeB.settleFrames = 0;
+          }
+        }
+      }
+    }
+
     windTargetRef.current.x -= windTargetRef.current.x * GLOBAL_WIND_DECAY * deltaSeconds;
     windTargetRef.current.y -= windTargetRef.current.y * GLOBAL_WIND_DECAY * deltaSeconds;
     windTargetRef.current.z -= windTargetRef.current.z * GLOBAL_WIND_DECAY * deltaSeconds;
@@ -676,6 +822,10 @@ export default function Home() {
         const hitLeftWall = stroke.points.some((point) => point.x <= leftLimit + 0.001);
         const hitRightWall = stroke.points.some((point) => point.x >= rightLimit - 0.001);
         const hitTopWall = stroke.points.some((point) => point.y >= topLimit - 0.001);
+        const backLimit = tank.backWall + WALL_PADDING_Z;
+        const frontLimit = tank.frontWall - WALL_PADDING_Z;
+        const hitBackWall = stroke.points.some((point) => point.z <= backLimit + 0.001);
+        const hitFrontWall = stroke.points.some((point) => point.z >= frontLimit - 0.001);
 
         if (hitLeftWall && stroke.velocityX < 0) {
           stroke.velocityX = -stroke.velocityX * WALL_RESTITUTION;
@@ -686,11 +836,17 @@ export default function Home() {
         if (hitTopWall && stroke.velocityY > 0) {
           stroke.velocityY = -stroke.velocityY * WALL_RESTITUTION;
         }
+        if (hitBackWall && stroke.velocityZ < 0) {
+          stroke.velocityZ = -stroke.velocityZ * WALL_RESTITUTION;
+        } else if (hitFrontWall && stroke.velocityZ > 0) {
+          stroke.velocityZ = -stroke.velocityZ * WALL_RESTITUTION;
+        }
       }
 
       let targetBottom = three.bottomWall + stroke.baseRadius;
 
       settled.forEach((other) => {
+        if (other.id === stroke.id) return;
         const centerA = stroke.points[Math.floor(stroke.points.length / 2)];
         const centerB = other.points[Math.floor(other.points.length / 2)];
         if (!centerA || !centerB) return;
@@ -703,30 +859,6 @@ export default function Home() {
           other.baseRadius * COLLISION_SPACING_MULTIPLIER;
         if (distanceXZ < allowed) {
           targetBottom = Math.max(targetBottom, other.maxY + stroke.baseRadius * 1.05);
-          if (distanceXZ > 0.001) {
-            const push = ((allowed - distanceXZ) / allowed) * COLLISION_PUSH_FORCE;
-            stroke.velocityX += (dx / distanceXZ) * push * deltaSeconds;
-            stroke.velocityZ += (dz / distanceXZ) * push * deltaSeconds;
-            other.velocityX -=
-              (dx / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
-            other.velocityZ -=
-              (dz / distanceXZ) * push * deltaSeconds * COLLISION_RECIPROCAL_SCALE;
-          } else {
-            stroke.velocityX += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
-            stroke.velocityZ += (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY;
-            other.velocityX +=
-              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
-            other.velocityZ +=
-              (Math.random() - 0.5) * RANDOM_COLLISION_VELOCITY * COLLISION_RECIPROCAL_SCALE;
-          }
-
-          if (other.settled) {
-            const otherPushSpeed = Math.hypot(other.velocityX, other.velocityZ);
-            if (otherPushSpeed > COLLISION_WAKE_THRESHOLD) {
-              other.settled = false;
-              other.settleFrames = 0;
-            }
-          }
         }
       });
 
@@ -873,8 +1005,9 @@ export default function Home() {
     rimLight.position.set(-260, 120, 420);
     scene.add(rimLight);
 
+    const tankDepth = Math.max(320, Math.min(window.innerWidth, window.innerHeight) * 0.62);
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(window.innerWidth * 1.05, window.innerWidth * 1.05),
+      new THREE.PlaneGeometry(window.innerWidth, tankDepth),
       new THREE.MeshStandardMaterial({ color: palette.floor, roughness: 0.92, metalness: 0.08 })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -882,7 +1015,6 @@ export default function Home() {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    const tankDepth = Math.max(320, Math.min(window.innerWidth, window.innerHeight) * 0.62);
     balloonStateRef.current.tankDepth = tankDepth;
 
     const boxGeometry = new THREE.BoxGeometry(
@@ -980,6 +1112,9 @@ export default function Home() {
       activeThree.bottomWall = -height / 2;
       activeThree.backWall = -depth / 2;
       activeThree.frontWall = depth / 2;
+      activeThree.floor.position.y = activeThree.bottomWall;
+      activeThree.floor.geometry.dispose();
+      activeThree.floor.geometry = new THREE.PlaneGeometry(width, depth);
 
       activeThree.scene.remove(activeThree.tank);
       activeThree.tank.geometry.dispose();
@@ -1057,7 +1192,14 @@ export default function Home() {
 
       if (!result.landmarks || result.landmarks.length === 0) {
         landmarkCanvasCtx.clearRect(0, 0, width, height);
-        releaseActiveStroke();
+        const now = performance.now();
+        if (balloonStateRef.current.activeStroke) {
+          if (pinchReleaseStateRef.current.lostAt === null) {
+            pinchReleaseStateRef.current.lostAt = now;
+          } else if (now - pinchReleaseStateRef.current.lostAt > PINCH_RELEASE_GRACE_MS) {
+            releaseActiveStroke();
+          }
+        }
         waveGestureStateRef.current.active = false;
         clearHoldCountdown();
         holdStateRef.current.rearmBlockedAction = null;
@@ -1115,7 +1257,7 @@ export default function Home() {
         drawLandmarks(landmarks, landmarkCanvasCtx, width, height, canDrawFromPinch);
       });
 
-      if (openPalmDetected) {
+      if (enableGestureWindRef.current && openPalmDetected) {
         const hand = result.landmarks[0];
         const wrist = hand?.[0];
         if (wrist) {
@@ -1216,8 +1358,14 @@ export default function Home() {
         toggleThemeMode();
       });
 
-      if (!isConnected) {
-        releaseActiveStroke();
+      if (isConnected) {
+        pinchReleaseStateRef.current.lostAt = null;
+      } else if (balloonStateRef.current.activeStroke) {
+        if (pinchReleaseStateRef.current.lostAt === null) {
+          pinchReleaseStateRef.current.lostAt = nowMs;
+        } else if (nowMs - pinchReleaseStateRef.current.lostAt > PINCH_RELEASE_GRACE_MS) {
+          releaseActiveStroke();
+        }
       }
 
       requestAnimationFrame(renderLoop);
@@ -1292,6 +1440,49 @@ export default function Home() {
     three.driftParticles.material.color.set(palette.particle);
   }, [themeMode]);
 
+  useEffect(() => {
+    if (!enableGestureWind) {
+      waveGestureStateRef.current.active = false;
+      windTargetRef.current.x = 0;
+      windTargetRef.current.y = 0;
+      windTargetRef.current.z = 0;
+      windStateRef.current.x = 0;
+      windStateRef.current.y = 0;
+      windStateRef.current.z = 0;
+    }
+  }, [enableGestureWind]);
+
+  useEffect(() => {
+    enableBalloonFallRef.current = enableBalloonFall;
+  }, [enableBalloonFall]);
+
+  useEffect(() => {
+    enableGestureWindRef.current = enableGestureWind;
+  }, [enableGestureWind]);
+
+  useEffect(() => {
+    const savedFall = window.localStorage.getItem("enableBalloonFall");
+    const savedWind = window.localStorage.getItem("enableGestureWind");
+    if (savedFall !== null) {
+      const parsed = savedFall === "true";
+      setEnableBalloonFall(parsed);
+      enableBalloonFallRef.current = parsed;
+    }
+    if (savedWind !== null) {
+      const parsed = savedWind === "true";
+      setEnableGestureWind(parsed);
+      enableGestureWindRef.current = parsed;
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("enableBalloonFall", String(enableBalloonFall));
+  }, [enableBalloonFall]);
+
+  useEffect(() => {
+    window.localStorage.setItem("enableGestureWind", String(enableGestureWind));
+  }, [enableGestureWind]);
+
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   return (
@@ -1310,13 +1501,11 @@ export default function Home() {
         className="fixed top-2 underline text-center z-40"
         style={{ color: THEME_PALETTES[themeMode].text }}
       >
-        {"Connect your index finger tip and thumb tip (like 👌) to create 3D balloons."}
+        {uiText.drawHint}
         <br />
-        {"连接食指和拇指的指尖（就像 👌），绘制 3D 长条气球。"}
+        {uiText.featureHint}
         <br />
-        {FEATURE_HINT_TEXT}
-        <br />
-        {`手势短暂抖动时，只要未持续变化超过约 ${JITTER_GRACE_SECONDS_TEXT} 秒，倒计时会继续 / If gesture briefly jitters, countdown keeps running unless it changes for ~${JITTER_GRACE_SECONDS_TEXT}s.`}
+        {uiText.jitterHint}
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
@@ -1338,23 +1527,101 @@ export default function Home() {
         style={{ transform: "rotateY(180deg)", opacity: 0.82 }}
       />
 
-      <Button
-        onPress={toggleThemeMode}
-        className="fixed top-2 right-28 z-50"
-        color={themeMode === "dark" ? "warning" : "secondary"}
-        variant="shadow"
-      >
-        {themeMode === "dark" ? "Light" : "Dark"}
-      </Button>
+      {/* Top-right control panel */}
+      <div className="fixed top-2 right-2 z-50 flex flex-col gap-2 items-end">
+        {/* Row 1: About + Theme + Language */}
+        <div className="flex gap-2 items-center">
+          {/* Language dropdown */}
+          <div className="relative">
+            <Button
+              onPress={() => setLangDropdownOpen((v) => !v)}
+              variant="flat"
+              size="sm"
+              style={{
+                backgroundColor: THEME_PALETTES[themeMode].modalBg,
+                color: THEME_PALETTES[themeMode].text,
+                border: `1px solid ${THEME_PALETTES[themeMode].tank}`,
+              }}
+            >
+              {currentLangLabel} ▾
+            </Button>
+            {langDropdownOpen && (
+              <div
+                className="absolute right-0 mt-1 rounded-lg overflow-hidden shadow-lg min-w-[6rem]"
+                style={{
+                  backgroundColor: THEME_PALETTES[themeMode].modalBg,
+                  border: `1px solid ${THEME_PALETTES[themeMode].tank}`,
+                  zIndex: 100,
+                }}
+              >
+                {LANG_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className="block w-full text-left px-4 py-2 text-sm hover:opacity-70 transition-opacity"
+                    style={{
+                      backgroundColor:
+                        option.value === locale
+                          ? THEME_PALETTES[themeMode].tank
+                          : "transparent",
+                      color: THEME_PALETTES[themeMode].text,
+                    }}
+                    onClick={() => {
+                      setLocale(option.value);
+                      setLangDropdownOpen(false);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-      <Button
-        onPress={onOpen}
-        className="fixed top-2 right-2 z-50"
-        color="primary"
-        variant="shadow"
-      >
-        About
-      </Button>
+          {/* Theme toggle */}
+          <Button
+            onPress={toggleThemeMode}
+            variant="shadow"
+            size="sm"
+            style={
+              themeMode === "dark"
+                ? undefined
+                : {
+                    backgroundColor: THEME_PALETTES.dark.appBg,
+                    color: THEME_PALETTES.dark.text,
+                  }
+            }
+            color={themeMode === "dark" ? "warning" : undefined}
+          >
+            {uiText.themeButton}
+          </Button>
+
+          {/* About */}
+          <Button onPress={onOpen} color="primary" variant="shadow" size="sm">
+            {uiText.about}
+          </Button>
+        </div>
+
+        {/* Row 2: toggles */}
+        <div className="flex gap-2 items-center">
+          <Button
+            onPress={() => setEnableBalloonFall((previous) => !previous)}
+            color={enableBalloonFall ? "success" : "default"}
+            variant="shadow"
+            size="sm"
+          >
+            {enableBalloonFall ? uiText.fallOn : uiText.fallOff}
+          </Button>
+
+          <Button
+            onPress={() => setEnableGestureWind((previous) => !previous)}
+            color={enableGestureWind ? "success" : "default"}
+            variant="shadow"
+            size="sm"
+          >
+            {enableGestureWind ? uiText.windOn : uiText.windOff}
+          </Button>
+        </div>
+      </div>
 
       {holdCountdown !== null && (
         <div
@@ -1369,7 +1636,7 @@ export default function Home() {
             }}
           >
             <div>
-              {holdCountdown.action === "clear" ? HOLD_CLEAR_LABEL : HOLD_THEME_LABEL}
+              {holdCountdown.action === "clear" ? uiText.holdClear : uiText.holdTheme}
             </div>
             <div className="text-4xl mt-1">{holdCountdown.seconds}</div>
           </div>
@@ -1383,23 +1650,14 @@ export default function Home() {
             color: THEME_PALETTES[themeMode].modalText,
           }}
         >
-          <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
+          <ModalHeader className="flex flex-col gap-1">{uiText.aboutTitle}</ModalHeader>
           <ModalBody>
             <p>
-              基于 Next.js 和 Mediapipe tasks-vision Gesture Recognizer
-              实现的手势白板。
+              {uiText.aboutDesc1}
               <br />
-              通过摄像头实时画面识别手势，在 3D 鱼缸空间里绘制长条气球并自然下落堆积。
+              {uiText.aboutDesc2}
             </p>
-            <p>
-              A gesture whiteboard based on Next.js and Mediapipe tasks-vision
-              Gesture Recognizer.
-              <br />
-              Recognize gestures through real-time camera images and draw long
-              3D balloon strokes that naturally fall and stack.
-            </p>
-            <p>其他 Mediapipe + Next.js 项目：</p>
-            <p>Other Mediapipe + Next.js projects:</p>
+            <p>{uiText.otherProjects}</p>
             <p>
               <Link href="https://cygra.github.io/danmaku-mask/">
                 Danmaku Mask
