@@ -1512,14 +1512,16 @@ export default function Home() {
         className="fixed top-2 left-2 z-50"
       />
       <div
-        className="fixed top-2 underline text-center z-40"
+        className="fixed top-2 left-0 right-0 underline text-center z-40 px-2 text-xs sm:text-sm"
         style={{ color: THEME_PALETTES[themeMode].text }}
       >
         {uiText.drawHint}
         <br />
         {uiText.featureHint}
-        <br />
-        {uiText.jitterHint}
+        <span className="hidden sm:inline">
+          <br />
+          {uiText.jitterHint}
+        </span>
       </div>
 
       <div ref={threeContainerRef} className="fixed inset-0 z-0" />
@@ -1537,14 +1539,14 @@ export default function Home() {
         ref={videoRef}
         autoPlay
         muted
-        className="fixed right-0 bottom-0 w-80 z-30"
+        className="fixed right-0 bottom-0 w-20 sm:w-48 md:w-80 z-30"
         style={{ transform: "rotateY(180deg)", opacity: 0.82 }}
       />
 
       {/* Top-right control panel */}
       <div className="fixed top-2 right-2 z-50 flex flex-col gap-2 items-end">
         {/* Row 1: About + Theme + Language */}
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center justify-end">
           {/* Language dropdown */}
           <div className="relative">
             <Button
@@ -1616,7 +1618,7 @@ export default function Home() {
         </div>
 
         {/* Row 2: toggles */}
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center justify-end">
           <Button
             onPress={() => setEnableBalloonFall((previous) => !previous)}
             color={enableBalloonFall ? "success" : "default"}
@@ -1639,7 +1641,7 @@ export default function Home() {
       </div>
 
       <div
-        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 text-xs opacity-60 whitespace-nowrap pointer-events-none"
+        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 text-xs opacity-60 pointer-events-none max-w-[90vw] sm:max-w-none text-center px-2"
         style={{ color: THEME_PALETTES[themeMode].text }}
       >
         {uiText.privacyNotice}
