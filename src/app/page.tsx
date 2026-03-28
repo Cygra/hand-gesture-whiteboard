@@ -21,6 +21,9 @@ import * as THREE from "three";
 
 const THUMB_TIP_INDEX = 4;
 const INDEX_FINGER_TIP_INDEX = 8;
+const WRIST_INDEX = 0;
+const MIDDLE_FINGER_MCP_INDEX = 9;
+const PINCH_RATIO_THRESHOLD = 0.35;
 const SMOOTHING_FACTOR = 0.3;
 const MIN_POINTS_FOR_BALLOON = 6;
 const GRAVITY = 900;
@@ -1233,10 +1236,21 @@ export default function Home() {
 
         const thumbTip = landmarks[THUMB_TIP_INDEX];
         const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
+        const wrist = landmarks[WRIST_INDEX];
+        const middleMcp = landmarks[MIDDLE_FINGER_MCP_INDEX];
 
-        const dx = Math.abs((thumbTip.x - indexFingerTip.x) * width);
-        const dy = Math.abs((thumbTip.y - indexFingerTip.y) * height);
-        const pinchConnected = dx < 50 && dy < 50;
+        // Normalize pinch distance relative to palm size so it's robust to hand distance from camera
+        const palmSize = Math.sqrt(
+          Math.pow(wrist.x - middleMcp.x, 2) +
+            Math.pow(wrist.y - middleMcp.y, 2)
+        );
+        const pinchDist = Math.sqrt(
+          Math.pow(thumbTip.x - indexFingerTip.x, 2) +
+            Math.pow(thumbTip.y - indexFingerTip.y, 2) +
+            Math.pow((thumbTip.z - indexFingerTip.z) * 0.5, 2)
+        );
+        const pinchConnected =
+          palmSize > 0 && pinchDist / palmSize < PINCH_RATIO_THRESHOLD;
         const canDrawFromPinch = pinchConnected && !hasFist;
         isConnected = isConnected || canDrawFromPinch;
 
