@@ -8,7 +8,7 @@
 
 A 3D gesture whiteboard built with Next.js, [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) Gesture Recognizer, and Three.js. Draw colorful 3D balloon strokes in a fish-tank-like scene using nothing but your hands — no mouse, no touch required.
 
-[📷 screenshot.png](docs/screenshot.png)
+![📷 screenshot.png](https://cygra.github.io/hand-gesture-whiteboard/og-image.png)
 
 ---
 

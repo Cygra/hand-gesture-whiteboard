@@ -8,7 +8,7 @@
 
 基于 Next.js、[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) 手势识别器和 Three.js 构建的 3D 手势白板。只需用手，无需鼠标或触摸，即可在鱼缸式 3D 空间中绘制彩色气球笔触。
 
-[📷 screenshot.png](docs/screenshot.png)
+![📷 screenshot.png](https://cygra.github.io/hand-gesture-whiteboard/og-image.png)
 
 ---
 

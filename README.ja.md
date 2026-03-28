@@ -8,7 +8,7 @@
 
 Next.js、[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) ジェスチャー認識、Three.js で構築した 3D ジェスチャーホワイトボード。マウスもタッチも不要 — 手だけで、3D 水槽のような空間にカラフルなバルーンストロークを描くことができます。
 
-[📷 screenshot.png](docs/screenshot.png)
+![📷 screenshot.png](https://cygra.github.io/hand-gesture-whiteboard/og-image.png)
 
 ---
 
