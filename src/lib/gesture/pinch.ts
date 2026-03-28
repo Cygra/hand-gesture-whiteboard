@@ -1,11 +1,16 @@
-import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { PINCH_RATIO_THRESHOLD } from "../constants";
 
+interface Point3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export function isPinching(
-  thumbTip: NormalizedLandmark,
-  indexTip: NormalizedLandmark,
-  wrist: NormalizedLandmark,
-  middleMcp: NormalizedLandmark
+  thumbTip: Point3D,
+  indexTip: Point3D,
+  wrist: Point3D,
+  middleMcp: Point3D
 ): boolean {
   const palmSize = Math.sqrt(
     Math.pow(wrist.x - middleMcp.x, 2) + Math.pow(wrist.y - middleMcp.y, 2)
