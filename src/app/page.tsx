@@ -256,16 +256,18 @@ export default function Home() {
           holdClear: "✊ 持续握拳 3 秒清空气球",
           holdTheme: "✌️/👍 持续 3 秒切换主题",
           themeButton: themeMode === "dark" ? "浅色" : "深色",
-          fallOn: "气球下落：开",
-          fallOff: "气球下落：关",
+          fallOn: "气球飘动：开",
+          fallOff: "气球飘动：关",
           windOn: "手势风吹：开",
           windOff: "手势风吹：关",
           about: "关于",
           aboutTitle: "关于",
           aboutDesc1:
             "基于 Next.js 和 Mediapipe tasks-vision Gesture Recognizer 实现的手势白板。",
-          aboutDesc2: "通过摄像头实时画面识别手势，在 3D 鱼缸空间里绘制长条气球并自然下落堆积。",
+          aboutDesc2: "通过摄像头实时画面识别手势，在 3D 鱼缸空间里绘制长条气球并自由飘动。",
           otherProjects: "其他 Mediapipe + Next.js 项目：",
+          privacyNotice:
+            "🔒 所有处理均在您的浏览器本地完成，摄像头画面不会被上传或共享。",
         }
       : locale === "ja"
       ? {
@@ -276,8 +278,8 @@ export default function Home() {
           holdClear: "✊ 握りこぶしを 3 秒キープで全消去",
           holdTheme: "✌️/👍 3 秒キープでテーマ切替",
           themeButton: themeMode === "dark" ? "ライト" : "ダーク",
-          fallOn: "落下：オン",
-          fallOff: "落下：オフ",
+          fallOn: "浮遊：オン",
+          fallOff: "浮遊：オフ",
           windOn: "風：オン",
           windOff: "風：オフ",
           about: "概要",
@@ -285,8 +287,10 @@ export default function Home() {
           aboutDesc1:
             "Next.js と Mediapipe tasks-vision Gesture Recognizer を使ったジェスチャーホワイトボード。",
           aboutDesc2:
-            "カメラ映像でジェスチャーを認識し、3D 空間にバルーンストロークを描いて自然に落下・積み上げます。",
+            "カメラ映像でジェスチャーを認識し、3D 空間にバルーンストロークを描いて自由に漂わせます。",
           otherProjects: "その他の Mediapipe + Next.js プロジェクト：",
+          privacyNotice:
+            "🔒 すべての処理はブラウザ内でのみ行われます。カメラ映像がアップロード・共有されることはありません。",
         }
       : {
           drawHint: "Connect your index finger tip and thumb tip (like 👌) to create 3D balloons.",
@@ -296,8 +300,8 @@ export default function Home() {
           holdClear: "✊ Hold fist 3s to clear",
           holdTheme: "✌️/👍 Hold Victory or Thumbs Up 3s to toggle theme",
           themeButton: themeMode === "dark" ? "Light" : "Dark",
-          fallOn: "Balloon Fall: ON",
-          fallOff: "Balloon Fall: OFF",
+          fallOn: "Balloon Float: ON",
+          fallOff: "Balloon Float: OFF",
           windOn: "Gesture Wind: ON",
           windOff: "Gesture Wind: OFF",
           about: "About",
@@ -305,8 +309,10 @@ export default function Home() {
           aboutDesc1:
             "A gesture whiteboard based on Next.js and Mediapipe tasks-vision Gesture Recognizer.",
           aboutDesc2:
-            "Recognize gestures through real-time camera images and draw long 3D balloon strokes that naturally fall and stack.",
+            "Recognize gestures through real-time camera images and draw long 3D balloon strokes that float freely.",
           otherProjects: "Other Mediapipe + Next.js projects:",
+          privacyNotice:
+            "🔒 All processing runs entirely in your browser — camera footage is never uploaded or shared.",
         };
 
   const LANG_OPTIONS: { value: Locale; label: string }[] = [
@@ -1463,17 +1469,25 @@ export default function Home() {
   useEffect(() => {
     const savedFall = window.localStorage.getItem("enableBalloonFall");
     const savedWind = window.localStorage.getItem("enableGestureWind");
+    const fallEnabled = savedFall !== null ? savedFall === "true" : true;
     if (savedFall !== null) {
-      const parsed = savedFall === "true";
-      setEnableBalloonFall(parsed);
-      enableBalloonFallRef.current = parsed;
+      setEnableBalloonFall(fallEnabled);
+      enableBalloonFallRef.current = fallEnabled;
     }
     if (savedWind !== null) {
-      const parsed = savedWind === "true";
-      setEnableGestureWind(parsed);
-      enableGestureWindRef.current = parsed;
+      const windEnabled = fallEnabled ? savedWind === "true" : false;
+      setEnableGestureWind(windEnabled);
+      enableGestureWindRef.current = windEnabled;
     }
   }, []);
+
+  // When fall is disabled, force wind off too
+  useEffect(() => {
+    if (!enableBalloonFall) {
+      setEnableGestureWind(false);
+      enableGestureWindRef.current = false;
+    }
+  }, [enableBalloonFall]);
 
   useEffect(() => {
     window.localStorage.setItem("enableBalloonFall", String(enableBalloonFall));
@@ -1617,10 +1631,18 @@ export default function Home() {
             color={enableGestureWind ? "success" : "default"}
             variant="shadow"
             size="sm"
+            isDisabled={!enableBalloonFall}
           >
             {enableGestureWind ? uiText.windOn : uiText.windOff}
           </Button>
         </div>
+      </div>
+
+      <div
+        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 text-xs opacity-60 whitespace-nowrap pointer-events-none"
+        style={{ color: THEME_PALETTES[themeMode].text }}
+      >
+        {uiText.privacyNotice}
       </div>
 
       {holdCountdown !== null && (
