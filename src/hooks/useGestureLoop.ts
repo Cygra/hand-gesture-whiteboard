@@ -38,6 +38,7 @@ type UseGestureLoopOptions = {
   pinchReleaseStateRef: MutableRefObject<PinchReleaseState>;
   previousDrawPointRef: MutableRefObject<DrawPoint>;
   enableGestureWindRef: MutableRefObject<boolean>;
+  selectedColorRef: MutableRefObject<string | null>;
   setHoldCountdown: (
     value: { action: HoldActionType; seconds: number } | null
   ) => void;
@@ -56,6 +57,7 @@ export function useGestureLoop({
   pinchReleaseStateRef,
   previousDrawPointRef,
   enableGestureWindRef,
+  selectedColorRef,
   setHoldCountdown,
   toggleThemeMode,
 }: UseGestureLoopOptions): void {
@@ -218,7 +220,8 @@ export function useGestureLoop({
                 smoothedY,
                 three,
                 canvasSizeRef.current,
-                balloonStateRef.current
+                balloonStateRef.current,
+                selectedColorRef.current
               );
             }
             previousDrawPointRef.current.x = smoothedX;

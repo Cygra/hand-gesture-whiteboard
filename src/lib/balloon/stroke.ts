@@ -26,7 +26,8 @@ export function addPointToActiveStroke(
   y: number,
   three: ThreeState,
   canvasSize: { width: number; height: number },
-  balloonState: BalloonState
+  balloonState: BalloonState,
+  selectedColorHex?: string | null
 ): void {
   const depth = balloonState.tankDepth;
   const worldX = x - canvasSize.width / 2;
@@ -40,7 +41,9 @@ export function addPointToActiveStroke(
   clampInsideTank(point, three);
 
   if (!balloonState.activeStroke) {
-    const color = randomBalloonColor();
+    const color = selectedColorHex
+      ? new THREE.Color(selectedColorHex)
+      : randomBalloonColor();
     const material = new THREE.MeshStandardMaterial({
       color,
       roughness: 0.2,
