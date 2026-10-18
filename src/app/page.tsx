@@ -12,23 +12,13 @@ import {
 import { Button } from "@nextui-org/button";
 import { Link } from "@nextui-org/link";
 
+import { ColorPicker } from "@/components/ColorPicker";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useThreeScene } from "@/hooks/useThreeScene";
 import { useGestureLoop } from "@/hooks/useGestureLoop";
 import { THEME_PALETTES } from "@/lib/themes";
 import { getUiText, LANG_OPTIONS } from "@/lib/i18n";
 import type { BalloonState, HoldActionType, HoldState, PinchReleaseState, DrawPoint } from "@/lib/types";
-
-const PRESET_COLORS = [
-  "#ff4444",
-  "#ff8833",
-  "#ffdd33",
-  "#44cc44",
-  "#3388ff",
-  "#aa44ff",
-  "#ff44aa",
-  "#ffffff",
-];
 
 export default function Home() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
@@ -252,90 +242,13 @@ export default function Home() {
           </Button>
         </div>
 
-        {/* Row 3: color picker */}
-        <div className="flex flex-wrap gap-1 items-center justify-end">
-          <span
-            className="text-xs mr-1"
-            style={{ color: THEME_PALETTES[themeMode].text }}
-          >
-            {uiText.colorLabel}:
-          </span>
-
-          {/* Random / rainbow swatch */}
-          <button
-            title={uiText.colorRandom}
-            onClick={() => setSelectedColor(null)}
-            className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs overflow-hidden"
-            style={{
-              background:
-                "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)",
-              borderColor:
-                selectedColor === null
-                  ? THEME_PALETTES[themeMode].text
-                  : "transparent",
-              outline:
-                selectedColor === null
-                  ? `2px solid ${THEME_PALETTES[themeMode].text}`
-                  : "none",
-              outlineOffset: "1px",
-            }}
-          />
-
-          {/* Preset color swatches */}
-          {PRESET_COLORS.map((hex) => (
-            <button
-              key={hex}
-              title={hex}
-              onClick={() => setSelectedColor(hex)}
-              className="w-6 h-6 rounded-full border-2"
-              style={{
-                backgroundColor: hex,
-                borderColor:
-                  selectedColor === hex
-                    ? THEME_PALETTES[themeMode].text
-                    : "transparent",
-                outline:
-                  selectedColor === hex
-                    ? `2px solid ${THEME_PALETTES[themeMode].text}`
-                    : "none",
-                outlineOffset: "1px",
-              }}
-            />
-          ))}
-
-          {/* Custom color input */}
-          <label
-            title={uiText.colorLabel}
-            className="w-6 h-6 rounded-full overflow-hidden cursor-pointer border-2 flex items-center justify-center"
-            style={{
-              borderColor:
-                selectedColor !== null && !PRESET_COLORS.includes(selectedColor)
-                  ? THEME_PALETTES[themeMode].text
-                  : "transparent",
-              outline:
-                selectedColor !== null && !PRESET_COLORS.includes(selectedColor)
-                  ? `2px solid ${THEME_PALETTES[themeMode].text}`
-                  : "none",
-              outlineOffset: "1px",
-              backgroundColor:
-                selectedColor !== null && !PRESET_COLORS.includes(selectedColor)
-                  ? selectedColor
-                  : THEME_PALETTES[themeMode].tank,
-            }}
-          >
-            <input
-              type="color"
-              className="opacity-0 w-0 h-0 absolute"
-              value={
-                selectedColor !== null && !PRESET_COLORS.includes(selectedColor)
-                  ? selectedColor
-                  : "#888888"
-              }
-              onChange={(e) => setSelectedColor(e.target.value)}
-            />
-            <span className="text-xs pointer-events-none select-none" style={{ color: THEME_PALETTES[themeMode].text }}>+</span>
-          </label>
-        </div>
+        <ColorPicker
+          selectedColor={selectedColor}
+          onChange={setSelectedColor}
+          locale={locale}
+          themeMode={themeMode}
+          text={uiText}
+        />
       </div>
 
       <div

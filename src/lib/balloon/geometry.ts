@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { DRAWING_COLORS } from "../colors";
 import type { BalloonStroke, WallBounds } from "../types";
 import {
   CONTACT_THRESHOLD_Y,
@@ -11,8 +12,8 @@ import {
 } from "../constants";
 
 export function randomBalloonColor(): THREE.Color {
-  const hue = Math.random();
-  return new THREE.Color().setHSL(hue, 0.75, 0.55);
+  const preset = DRAWING_COLORS[Math.floor(Math.random() * DRAWING_COLORS.length)];
+  return new THREE.Color(preset.hex);
 }
 
 export function computeBounds(points: THREE.Vector3[]): {
