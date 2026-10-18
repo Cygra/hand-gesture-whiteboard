@@ -12,6 +12,7 @@ import {
 import { Button } from "@nextui-org/button";
 import { Link } from "@nextui-org/link";
 
+import { ColorPicker } from "@/components/ColorPicker";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useThreeScene } from "@/hooks/useThreeScene";
 import { useGestureLoop } from "@/hooks/useGestureLoop";
@@ -36,6 +37,9 @@ export default function Home() {
     setEnableGestureWind,
     locale,
     setLocale,
+    selectedColor,
+    setSelectedColor,
+    selectedColorRef,
     enableBalloonFallRef,
     enableGestureWindRef,
     windStateRef,
@@ -88,6 +92,7 @@ export default function Home() {
     pinchReleaseStateRef,
     previousDrawPointRef,
     enableGestureWindRef,
+    selectedColorRef,
     setHoldCountdown,
     toggleThemeMode,
   });
@@ -236,6 +241,14 @@ export default function Home() {
             {enableGestureWind ? uiText.windOn : uiText.windOff}
           </Button>
         </div>
+
+        <ColorPicker
+          selectedColor={selectedColor}
+          onChange={setSelectedColor}
+          locale={locale}
+          themeMode={themeMode}
+          text={uiText}
+        />
       </div>
 
       <div

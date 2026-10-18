@@ -1,0 +1,38 @@
+# Hand Gesture Whiteboard
+
+> A real-time 3D gesture whiteboard built with Next.js, MediaPipe Gesture Recognizer, and Three.js. Draw colorful 3D balloon strokes in a physics-driven fish-tank scene using only your hands and a webcam — no mouse or touch required.
+
+Live demo: https://cygra.github.io/hand-gesture-whiteboard/
+Source: https://github.com/Cygra/hand-gesture-whiteboard
+
+## What it does
+
+- **Pinch to draw** — touch index fingertip to thumb tip (👌) to start drawing a 3D balloon stroke; release to drop it into the scene
+- **Wave to create wind** — open-palm gesture (🖐️) generates directional wind that nudges balloons
+- **Fist to clear** — hold a closed fist (✊) for 3 seconds to remove all balloons from the scene
+- **Toggle theme** — hold Victory (✌️) or Thumbs Up (👍) for 3 seconds to switch between light and dark palettes
+- **Color picker** — choose a stroke color from preset swatches, a custom color palette, or let the app pick a random color for each new stroke
+- **Physics** — balloons float, drift, bounce off all six walls, and collide with each other
+- **i18n** — interface available in English, Chinese (中文), and Japanese (日本語)
+- **Privacy-first** — all processing happens entirely in the browser; no camera footage is uploaded or shared
+
+## Tech stack
+
+- Next.js 15 (static export, deployed to GitHub Pages)
+- Three.js — TubeGeometry balloon rendering, custom physics loop
+- MediaPipe tasks-vision Gesture Recognizer — real-time hand landmark and gesture detection
+- NextUI — UI component library
+- Tailwind CSS — utility-first styling
+
+## Gesture reference
+
+| Gesture | Action |
+|---|---|
+| 👌 Pinch (index + thumb) | Draw a 3D balloon stroke |
+| 🖐️ Open palm wave | Create directional wind |
+| ✊ Hold fist 3 s | Clear all balloons |
+| ✌️ / 👍 Hold 3 s | Toggle light / dark theme |
+
+## Related projects
+
+- Danmaku Mask — https://cygra.github.io/danmaku-mask/ (another MediaPipe + Next.js project)

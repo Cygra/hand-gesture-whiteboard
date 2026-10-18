@@ -12,6 +12,9 @@ export type UiText = {
   fallOff: string;
   windOn: string;
   windOff: string;
+  colorLabel: string;
+  colorRandom: string;
+  colorCustom: string;
   about: string;
   aboutTitle: string;
   aboutDesc1: string;
@@ -40,6 +43,9 @@ export function getUiText(locale: Locale, themeMode: ThemeMode): UiText {
       fallOff: "气球飘动：关",
       windOn: "手势风吹：开",
       windOff: "手势风吹：关",
+      colorLabel: "颜色",
+      colorRandom: "随心配色",
+      colorCustom: "自定义颜色",
       about: "关于",
       aboutTitle: "关于",
       aboutDesc1:
@@ -65,6 +71,9 @@ export function getUiText(locale: Locale, themeMode: ThemeMode): UiText {
       fallOff: "浮遊：オフ",
       windOn: "風：オン",
       windOff: "風：オフ",
+      colorLabel: "カラー",
+      colorRandom: "ランダム",
+      colorCustom: "カスタムカラー",
       about: "概要",
       aboutTitle: "概要",
       aboutDesc1:
@@ -90,6 +99,9 @@ export function getUiText(locale: Locale, themeMode: ThemeMode): UiText {
     fallOff: "Balloon Float: OFF",
     windOn: "Gesture Wind: ON",
     windOff: "Gesture Wind: OFF",
+    colorLabel: "Color",
+    colorRandom: "Random",
+    colorCustom: "Custom color",
     about: "About",
     aboutTitle: "About",
     aboutDesc1:

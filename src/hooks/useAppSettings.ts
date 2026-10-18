@@ -6,6 +6,9 @@ export function useAppSettings() {
   const [enableBalloonFall, setEnableBalloonFall] = useState(true);
   const [enableGestureWind, setEnableGestureWind] = useState(true);
   const [locale, setLocale] = useState<Locale>("en");
+  // null = random color per stroke; hex string = fixed color
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const selectedColorRef = useRef<string | null>(null);
 
   const enableBalloonFallRef = useRef(enableBalloonFall);
   const enableGestureWindRef = useRef(enableGestureWind);
@@ -24,6 +27,10 @@ export function useAppSettings() {
   };
 
   // Sync refs with state
+  useEffect(() => {
+    selectedColorRef.current = selectedColor;
+  }, [selectedColor]);
+
   useEffect(() => {
     enableBalloonFallRef.current = enableBalloonFall;
   }, [enableBalloonFall]);
@@ -93,6 +100,9 @@ export function useAppSettings() {
     setEnableGestureWind,
     locale,
     setLocale,
+    selectedColor,
+    setSelectedColor,
+    selectedColorRef,
     enableBalloonFallRef,
     enableGestureWindRef,
     windStateRef,
